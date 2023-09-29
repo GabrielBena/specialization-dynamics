@@ -61,8 +61,11 @@ class masked_RNN(nn.RNN):
     def forward(self, input, hx=None):
         for n, p in self.named_parameters():
             if "weight_hh" in n:
-                # print(p.shape, self.comms_mask.shape)
-                p.data *= self.comms_mask + self.rec_mask
+                if n[-1] == str(self.num_layers - 1):
+                    p.data *= self.comms_mask + self.rec_mask
+                else:
+                    p.data *= self.rec_mask
+
             elif "weight_ih" in n and n[-1] != "0":
                 # print(p.shape, self.input_mask.shape)
                 p.data *= self.state_mask
@@ -96,23 +99,30 @@ class masked_GRU(nn.GRU):
 cell_types_dict = {str(t): t for t in [masked_RNN, masked_GRU]}
 
 
-def reccursive_forward(input, model):
-
-    if isinstance(model, nn.ModuleList):
-        out = [reccursive_forward(input, m) for m in model]
-        # try :
-        #     out = torch.stack(out)
-        # except TypeError :
-        #     pass
+def reccursive_readout(input, readout, common_readout, output_size):
+    if isinstance(readout, nn.ModuleList):
+        out = [
+            reccursive_readout(input, r, common_readout, size)
+            for r, size in zip(readout, output_size)
+        ]
     else:
-        out = model(input)
+        out = process_readout(input, readout, common_readout, output_size)
+
     return out
 
 
-def reccursive_masking(model, masks):
+def process_readout(input, readout, common_readout, output_size):
+    output = readout(input)
+    if not common_readout:
+        output = torch.stack(output.split(output_size, -1), 1)
+    return output
 
+
+def reccursive_masking(model, masks):
     if isinstance(model, nn.ModuleList):
         [reccursive_masking(m, mask) for m, mask in zip(model, masks)]
+    elif isinstance(model, nn.Sequential):
+        model[0].weight.data *= masks
     else:
         model.weight.data *= masks
     return model
@@ -121,24 +131,28 @@ def reccursive_masking(model, masks):
 class Community(nn.Module):
     def __init__(
         self,
-        agents_configs,
-        connections_config,
-        input_config,
-        readout_config,
+        config,
     ) -> None:
         super().__init__()
 
+        (
+            self.input_config,
+            self.agents_configs,
+            self.connections_config,
+            self.readout_config,
+        ) = [config[k] for k in ["input", "agents", "connections", "readout"]]
+
         self.is_community = True
         self.input_size, self.common_input = [
-            input_config[k] for k in ["input_size", "common_input"]
+            self.input_config[k] for k in ["input_size", "common_input"]
         ]
         self.n_agents, self.hidden_size, self.n_layers, self.dropout, self.cell_type = [
-            agents_configs[k]
+            self.agents_configs[k]
             for k in ["n_agents", "hidden_size", "n_layers", "dropout", "cell_type"]
         ]
-        self.sparsity = connections_config["sparsity"]
+        self.sparsity = self.connections_config["sparsity"]
         self.output_size, self.common_readout = [
-            readout_config[k] for k in ["output_size", "common_readout"]
+            self.readout_config[k] for k in ["output_size", "common_readout"]
         ]
 
         gru = "GRU" in self.cell_type
@@ -154,8 +168,13 @@ class Community(nn.Module):
             ),
             "rec_mask": rec_masks[1],
             "comms_mask": rec_masks[0],
-            "output_mask": state_mask(
-                self.n_agents, self.output_size, self.hidden_size
+            "output_mask": state_mask(self.n_agents, self.output_size, self.hidden_size)
+            if not isinstance(self.output_size, list)
+            else torch.stack(
+                [
+                    state_mask(self.n_agents, o, self.hidden_size)
+                    for o in self.output_size
+                ]
             ),
         }
 
@@ -173,28 +192,47 @@ class Community(nn.Module):
             self.register_buffer(n, m)
 
         if self.common_readout:
-            self.readout = nn.Linear(self.n_agents * self.hidden_size, self.output_size)
+            self.readout = (
+                nn.Linear(self.n_agents * self.hidden_size, self.output_size)
+                if not self.multi_readout
+                else nn.ModuleList(
+                    [
+                        nn.Linear(self.n_agents * self.hidden_size, o)
+                        for o in self.output_size
+                    ]
+                )
+            )
         else:
-            self.readout = nn.Linear(
-                self.n_agents * self.hidden_size, self.output_size * self.n_agents
+            self.readout = (
+                nn.Linear(
+                    self.n_agents * self.hidden_size, self.output_size * self.n_agents
+                )
+                if not self.multi_readout
+                else nn.ModuleList(
+                    [
+                        nn.Linear(self.n_agents * self.hidden_size, o * self.n_agents)
+                        for o in self.output_size
+                    ]
+                )
             )
 
     @property
     def multi_readout(self):
-        return isinstance(self.readout, nn.ModuleList)
+        if hasattr(self, "readout"):
+            return isinstance(self.readout, nn.ModuleList)
+        else:
+            return isinstance(self.output_size, list)
 
     def forward(self, input):
         output, states = self.core(input)
 
-        if self.multi_readout:
+        if not self.common_readout:
             reccursive_masking(self.readout, self.output_mask)
-            output = reccursive_forward(output, self.readout)
-        else:
-            if not self.common_readout:
-                self.readout.weight.data *= self.output_mask
-                output = self.readout(output)
-                output = torch.stack(output.split(self.output_size, -1), 1)
-            else:
-                output = self.readout(output)
 
+        output = reccursive_readout(
+            output,
+            self.readout,
+            self.common_readout,
+            self.output_size,
+        )
         return output, states

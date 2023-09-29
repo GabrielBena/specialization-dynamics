@@ -50,7 +50,7 @@ def get_temporal_decision(outputs, temporal_decision):
     try:
         deciding_ts = int(temporal_decision)
         outputs = outputs[deciding_ts]
-    except ValueError:
+    except (ValueError, TypeError) as e:
         if temporal_decision == "last":
             outputs = outputs[-1]
         elif temporal_decision == "sum":
@@ -67,7 +67,7 @@ def get_temporal_decision(outputs, temporal_decision):
     return outputs
 
 
-def get_agent_decision(outputs, agent_decision, target=None):
+def get_agent_decision(outputs, agent_decision):
     try:
         deciding_ags = int(agent_decision)
         outputs = outputs[deciding_ags]
@@ -105,15 +105,21 @@ def get_agent_decision(outputs, agent_decision, target=None):
 
 
 def get_decision(outputs, temporal_decision="last", agent_decision="0"):
-    outputs = get_temporal_decision(outputs, temporal_decision)
+    if isinstance(outputs, list):
+        decs = [get_decision(out, temporal_decision, agent_decision) for out in outputs]
+        outputs = [dec[0] for dec in decs]
+        deciding_ags = [dec[1] for dec in decs]
+        return torch.stack(outputs, -3), deciding_ags
+    else:
+        outputs = get_temporal_decision(outputs, temporal_decision)
 
-    try:
-        if len(outputs.shape) == 2:
-            return outputs, None
-    except AttributeError:
-        pass
+        try:
+            if len(outputs.shape) == 2:
+                return outputs, None
+        except AttributeError:
+            pass
 
-    for ag_decision in agent_decision.split("_"):
-        outputs, deciding_ags = get_agent_decision(outputs, ag_decision)
+        for ag_decision in agent_decision.split("_"):
+            outputs, deciding_ags = get_agent_decision(outputs, ag_decision)
 
-    return outputs, deciding_ags
+        return outputs.squeeze(), deciding_ags

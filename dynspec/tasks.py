@@ -24,13 +24,10 @@ def get_single_task(task, target, n_classes=None):
         if "digits" in task:
             parity = (digits.sum(0)) % 2  # 0 when same parity
             if "both" in task:
-                return torch.stack(
-                    [
-                        torch.where(parity.bool(), digits[0], digits[1]),
-                        torch.where(parity.bool(), digits[1], digits[0]),
-                    ],
-                    -1,
-                )
+                return [
+                    torch.where(parity.bool(), digits[0], digits[1]),
+                    torch.where(parity.bool(), digits[1], digits[0]),
+                ]
             elif "equal" in task:
                 tgt = torch.where(parity.bool(), digits[0], digits[1])
                 tgt[
@@ -40,6 +37,8 @@ def get_single_task(task, target, n_classes=None):
                 return tgt
             elif "sum" in task:
                 return parity
+            elif "inv" in task:
+                return torch.where(parity.bool(), digits[1], digits[0])
             else:
                 return torch.where(parity.bool(), digits[0], digits[1])
 
@@ -96,10 +95,11 @@ def get_task_target(target, task, n_classes):
 
     if type(task) is list:
         targets = [get_task_target(target, t, n_classes) for t in task]
-        try:
-            return torch.stack(targets)
-        except (ValueError, RuntimeError) as e:
-            return targets
+        # try:
+        #     return torch.stack(targets)
+        # except (ValueError, RuntimeError) as e:
+        #     return targets
+        return targets
 
     else:
         new_target = deepcopy(target)
@@ -112,6 +112,7 @@ def get_task_target(target, task, n_classes):
 
         if len(new_target.shape) == 2:
             new_target = new_target.T
+            # new_target = list(new_target.split(1, 0))
 
         return new_target
 

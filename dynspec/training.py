@@ -57,7 +57,8 @@ def get_loss(output, t_target, use_both=False):
 
 def get_acc(output, t_target, use_both=False):
     if use_both:
-        acc = [get_acc(o, t_target) for o in output]
+        all = [get_acc(o, t_target) for o in output]
+        acc, correct = [a[0] for a in all], [a[1] for a in all]
     else:
         try:
             pred = output.argmax(
@@ -66,18 +67,19 @@ def get_acc(output, t_target, use_both=False):
 
             correct = pred.eq(t_target.view_as(pred))
             acc = (correct.sum() / t_target.numel()).cpu().data.numpy()
+            correct = correct.cpu().data.numpy().squeeze()
         except AttributeError as e:
-            acc = [get_acc(o, t) for o, t in zip(output, t_target)]
+            all = [get_acc(o, t) for o, t in zip(output, t_target)]
+            acc, correct = [a[0] for a in all], [a[1] for a in all]
 
-    return np.array(acc)
+    return np.array(acc), np.array(correct)
 
 
 def train_community(
     model,
-    train_loader,
-    test_loader,
     optimizer,
     config,
+    loaders,
     schedulers=None,
     n_epochs=None,
     use_tqdm=True,
@@ -94,7 +96,7 @@ def train_community(
     descs = ["" for _ in range(2)]
     desc = lambda descs: descs[0] + descs[1]
     train_losses, train_accs = [], []
-    test_accs, test_losses = [], []
+    test_accs, test_losses, all_accs = [], [], []
     deciding_agents = []
     best_loss, best_acc = 1e10, 0.0
     training, testing = trials
@@ -104,7 +106,9 @@ def train_community(
     if use_tqdm:
         pbar = tqdm_f(pbar, position=0, leave=None, desc="Train Epoch:")
 
-    torch.compile(model)
+    # torch.compile(model)
+
+    train_loader, test_loader = loaders
 
     for epoch in pbar:
         if training and epoch > 0:
@@ -143,12 +147,19 @@ def train_community(
                 complete_loss = get_loss(output, t_target, use_both=both)
                 loss = nested_mean(complete_loss)
 
-                acc = get_acc(output, t_target, use_both=both)
+                acc, _ = get_acc(output, t_target, use_both=both)
 
                 train_accs.append(acc)
 
                 loss.backward()
                 train_losses.append(loss.cpu().data.item())
+
+                if show_all_acc is True:
+                    show_acc = nested_round(acc)
+                elif type(show_all_acc) is int:
+                    show_acc = nested_round(acc[show_all_acc])
+                else:
+                    show_acc = np.round(100 * np.mean(acc))
 
                 # Apply gradients on agents weights
                 optimizer.step()
@@ -161,9 +172,7 @@ def train_community(
                         torch.round(complete_loss.mean(-1), decimals=3).data
                         if False
                         else torch.round(loss, decimals=1).item(),
-                        np.round(100 * np.mean(acc))
-                        if not show_all_acc
-                        else nested_round(acc),
+                        show_acc,
                         np.mean(deciding_agents),
                     )
                 )
@@ -172,20 +181,23 @@ def train_community(
                     pbar.set_description(desc(descs))
 
         if testing:
-            descs[1], loss, acc, _ = test_community(
+            test_results = test_community(
                 model,
                 device,
                 test_loader,
                 config,
                 show_all_acc,
             )
-            if loss < best_loss:
-                best_loss = loss
-                best_state = copy.deepcopy(model.state_dict())
-                best_acc = acc
+            descs[1] = test_results["desc"]
 
-            test_losses.append(loss)
-            test_accs.append(acc)
+            if test_results["test_loss"] < best_loss:
+                best_loss = test_results["test_loss"]
+                best_state = copy.deepcopy(model.state_dict())
+                best_acc = test_results["test_acc"]
+
+            test_losses.append(test_results["test_loss"])
+            test_accs.append(test_results["test_acc"])
+            all_accs.append(test_results["all_accs"])
 
             if use_tqdm:
                 pbar.set_description(desc(descs))
@@ -199,13 +211,18 @@ def train_community(
             "train_losses": np.array(train_losses),
             "train_accs": np.array(train_accs),
             "test_losses": np.array(test_losses),
-            "test_accs": np.array(test_accs),
+            "test_accs": np.array(test_accs),  # n_epochs x n_tasks
+            "all_accs": np.array(all_accs),  # n_epochs x n_tasks x n_data
             "deciding_agents": np.array(deciding_agents),
             "best_state": best_state,
         }
 
-        if stop_acc is not None and best_acc >= stop_acc:
-            return results
+        try:
+            if stop_acc is not None and best_acc >= stop_acc:
+                return results
+        except ValueError:
+            if stop_acc is not None and (best_acc >= stop_acc).all():
+                return results
 
     return results
 
@@ -213,8 +230,8 @@ def train_community(
 def test_community(model, device, test_loader, config, show_all_acc=False):
     model.eval()
     test_loss = 0
-    correct = 0
-    acc = 0
+    test_accs = []
+    all_accs = []
     deciding_agents = []
 
     decision = config["decision"]
@@ -224,12 +241,11 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
     with torch.no_grad():
         for data, target in test_loader:
             data, _ = process_data(data, config["data"])
-            t_target = get_task_target(target, task, n_classes_per_digit)
-            data, target, t_target = (
+            data, target = (
                 data.to(device),
                 target.to(device),
-                t_target.to(device),
             )
+            t_target = get_task_target(target, task, n_classes_per_digit)
             output, _ = model(data)
 
             if decision is not None:
@@ -252,19 +268,36 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
             loss = nested_mean(complete_loss)
 
             test_loss += loss
-            test_acc = get_acc(output, t_target, use_both=both)
-            acc += test_acc
+            test_acc, all_acc = get_acc(output, t_target, use_both=both)
+            test_accs.append(test_acc)
+            all_accs.append(all_acc)
 
     test_loss /= len(test_loader)
-    acc /= len(test_loader)
+
+    acc = np.array(test_accs).mean(0)
 
     deciding_agents = np.array(deciding_agents)
+
+    if show_all_acc is True:
+        show_acc = nested_round(acc)
+    elif type(show_all_acc) is int:
+        show_acc = nested_round(acc[show_all_acc])
+    else:
+        show_acc = np.round(100 * np.mean(acc))
 
     desc = str(
         " | Test set: Loss: {:.3f}, Accuracy: {}%".format(
             test_loss,
-            np.round(100 * np.mean(acc)) if not show_all_acc else nested_round(acc),
+            show_acc,
         )
     )
 
-    return desc, test_loss.cpu().data.item(), acc, deciding_agents
+    test_results = {
+        "desc": desc,
+        "test_loss": test_loss.cpu().data.item(),
+        "test_acc": acc,
+        "deciding_agents": deciding_agents,
+        "all_accs": np.concatenate(all_accs, -1),
+    }
+
+    return test_results
