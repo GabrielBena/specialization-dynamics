@@ -1,0 +1,51 @@
+# style_sheet
+
+# TO USE 
+# Add these lines to the start of your notebook: 
+# from pathlib import Path
+# root = Path(".")
+# plt.style.use(root / 'style_sheet.mplstyle')
+# Then follow the color guide below 
+
+# COLOR Guide
+# For each architecture (unimodal, multimodal, double-unimodal) use these colors: 
+# arch_col = ['xkcd: light purple', 'xkcd:dark seafoam', 'xkcd:purple'] 
+
+# When plotting single things use black ('k').
+# When plotting multiple things with a single varying parameter (e.g. signal strength) use black ('k') and vary alpha. Though, try to keep alpha as high as possible, e.g. for signal strengths from .1-.4 use alphas from .7-1.
+
+# For continuous colormaps use 'plasma'
+# For diverging colormaps use 'bwr'
+
+# AXES 
+axes.spines.right : False 
+axes.spines.top : False 
+axes.labelsize : 15 
+axes.titlesize : 15
+axes.linewidth : 2
+
+
+# FONT
+font.size : 15
+
+# FIG 
+figure.figsize : 5, 5 
+# Note: try to stick to multiples of this figsize (e.g. for 3 subplots in 1 row, use 15, 5 # width, height)
+figure.dpi : 100
+savefig.dpi : 300
+
+# LINES
+lines.linewidth : 3
+
+# LEGEND
+legend.frameon : False 
+legend.fontsize : 15
+
+# TICKS 
+
+xtick.labelsize: 15
+ytick.labelsize: 15
+xtick.major.width : 2
+ytick.major.width : 2
+xtick.major.size : 5
+ytick.major.size : 5
