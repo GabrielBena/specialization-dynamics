@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dynspec"
+authors = [
+    {name = "Gabriel Béna", email = "gabriel.bena21@imperial.ac.uk"},
+]
+description = "Code implementation for https://arxiv.org/abs/2106.02626"
+readme = "README.md"
+
+requires-python = ">=3.7"
+dependencies = ["torch", "torchvision", "numpy", "matplotlib", "ipykernel"]
+dynamic = ["version"]
