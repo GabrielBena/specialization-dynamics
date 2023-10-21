@@ -2,6 +2,14 @@ import torch
 import numpy as np
 
 
+def flatten_list(l):
+    assert isinstance(l, list)
+
+    if isinstance(l[0], list):
+        return flatten_list([item for sublist in l for item in sublist])
+    else:
+        return l
+
 
 def add_structured_noise(data, n_samples=5, noise_ratio=0.9):
     noised_idxs = np.stack(
@@ -106,5 +114,3 @@ def process_data(data, data_config):
     data = data.reshape(data.shape[0], data.shape[1], -1)
 
     return data, start_times
-
-

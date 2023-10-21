@@ -65,7 +65,6 @@ class masked_RNN(nn.RNN):
                     p.data *= self.comms_mask + self.rec_mask
                 else:
                     p.data *= self.rec_mask
-
             elif "weight_ih" in n and n[-1] != "0":
                 # print(p.shape, self.input_mask.shape)
                 p.data *= self.state_mask
@@ -84,8 +83,10 @@ class masked_GRU(nn.GRU):
     def forward(self, input, hx=None):
         for n, p in self.named_parameters():
             if "weight_hh" in n:
-                # print(p.shape, self.comms_mask.shape)
-                p.data *= self.comms_mask + self.rec_mask
+                if n[-1] == str(self.num_layers - 1):
+                    p.data *= self.comms_mask + self.rec_mask
+                else:
+                    p.data *= self.rec_mask
             elif "weight_ih" in n and n[-1] != "0":
                 # print(p.shape, self.input_mask.shape)
                 p.data *= self.state_mask
@@ -156,12 +157,15 @@ class Community(nn.Module):
         ]
 
         gru = "GRU" in self.cell_type
-
         rec_masks = comms_mask(self.sparsity, self.n_agents, self.hidden_size, gru=gru)
 
         self.masks = {
             "input_mask": state_mask(
                 self.n_agents, self.hidden_size, self.input_size, gru=gru
+            )
+            if not self.common_input
+            else torch.ones_like(
+                state_mask(self.n_agents, self.hidden_size, self.input_size, gru=gru)
             ),
             "state_mask": state_mask(
                 self.n_agents, self.hidden_size, self.hidden_size, gru=gru

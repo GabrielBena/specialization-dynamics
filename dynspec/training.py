@@ -106,10 +106,9 @@ def train_community(
     if use_tqdm:
         pbar = tqdm_f(pbar, position=0, leave=None, desc="Train Epoch:")
 
-    # torch.compile(model)
+    # model = torch.compile(model)
 
     train_loader, test_loader = loaders
-
     for epoch in pbar:
         if training and epoch > 0:
             model.train()

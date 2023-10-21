@@ -97,7 +97,7 @@ def compute_retraining_metric(
         [10 for i in list(range(model.n_agents))[::-1] + [None]]
         for _ in range(n_targets)
     ]
-    retraining_config["training"]["n_epochs"] = 10
+    retraining_config["training"]["n_epochs"] = 5
 
     retraining_optimizer = torch.optim.AdamW(
         model.parameters(), **retraining_config["optim"]
