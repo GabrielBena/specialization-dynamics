@@ -75,6 +75,17 @@ def get_acc(output, t_target, use_both=False):
     return np.array(acc), np.array(correct)
 
 
+def check_grad(model):
+    for n, p in model.named_parameters():
+        if p.requires_grad:
+            if p.grad is None:
+                print(f"No grad for {n}")
+            elif not p.grad.any():
+                print(f"Zero grad for {n}")
+            else:
+                pass
+
+
 def train_community(
     model,
     optimizer,
@@ -151,6 +162,8 @@ def train_community(
                 train_accs.append(acc)
 
                 loss.backward()
+                if config["training"]["check_grad"]:
+                    check_grad(model)
                 train_losses.append(loss.cpu().data.item())
 
                 if show_all_acc is True:
