@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from itertools import product
+from torch.nn.utils.parametrize import register_parametrization as pm
 
 
 def state_mask(n_agents, n_0, n_1, gru=False):
@@ -14,7 +15,11 @@ def state_mask(n_agents, n_0, n_1, gru=False):
 
 
 def sparse_mask(sparsity, n_in, n_out):
-    nb_non_zero = int(sparsity * n_in * n_out)
+    if sparsity >= 0:
+        assert sparsity <= 1
+        nb_non_zero = int(sparsity * n_in * n_out)
+    else:
+        nb_non_zero = -sparsity
     w_mask = np.zeros((n_in, n_out), dtype=bool)
     # ind_in = rd.choice(np.arange(in_features),size=self.nb_non_zero)
     # ind_out = rd.choice(np.arange(out_features),size=self.nb_non_zero)
@@ -57,6 +62,20 @@ class masked_RNN(nn.RNN):
     def __init__(self, *args, masks, **kwargs):
         super().__init__(*args, **kwargs)
         [self.register_buffer(n, m) for n, m in masks.items()]
+        # for n, _ in self.named_parameters():
+        #     if "weight_hh" in n:
+        #         if n[-1] == str(self.num_layers - 1):
+        #             pm(
+        #                 self,
+        #                 n,
+        #                 lambda w: w * (self.comms_mask + self.rec_mask),
+        #             )
+        #         else:
+        #             pm(self, n, lambda w: w * self.rec_mask)
+        #     elif "weight_ih" in n and n[-1] != "0":
+        #         pm(self, n, lambda w: w * self.state_mask)
+        #     elif "weight_ih" in n and n[-1] == "0":
+        #         pm(self, n, lambda w: w * self.input_mask)
 
     def forward(self, input, hx=None):
         for n, p in self.named_parameters():

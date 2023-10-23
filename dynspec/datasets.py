@@ -287,7 +287,7 @@ def get_datasets(root, data_config):
     n_classes = data_config.get("n_classes_per_digit", 10)
 
     split_classes = data_config.get("split_classes", False)
-    fix_asym = data_config.get("fix_asym", True)
+    fix_asym = data_config.get("fix_asym", False)
     permute = data_config.get("permute_dataset", False)
     seed = data_config.get("seed", 42)
     cov_ratio = data_config.get("cov_ratio", 1.)

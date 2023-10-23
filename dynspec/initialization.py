@@ -25,10 +25,10 @@ def get_readout_dimensions(task) :
         raise ValueError("Unknown task: {}".format(task))
 
 
-def init_model(config) : 
+def init_model(config, device=torch.device('cpu')) : 
 
     readout_dim = get_readout_dimensions(config['training']["task"])
     config['readout']['output_size'] = readout_dim
-    model =  Community(config)
+    model =  Community(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), **config['optim'])
     return model, optimizer
