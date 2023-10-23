@@ -9,7 +9,9 @@ You will need to create a new environement and install the dynspec package local
 
 ``
 conda create -n dynspec python=3.10
+
 conda activate dynspec
+
 pip install -e .
 ``
 
