@@ -138,7 +138,7 @@ class Community(nn.Module):
 
         (
             self.input_config,
-            self.agents_configs,
+            self.agents_config,
             self.connections_config,
             self.readout_config,
         ) = [config[k] for k in ["input", "agents", "connections", "readout"]]
@@ -148,7 +148,7 @@ class Community(nn.Module):
             self.input_config[k] for k in ["input_size", "common_input"]
         ]
         self.n_agents, self.hidden_size, self.n_layers, self.dropout, self.cell_type = [
-            self.agents_configs[k]
+            self.agents_config[k]
             for k in ["n_agents", "hidden_size", "n_layers", "dropout", "cell_type"]
         ]
         self.sparsity = self.connections_config["sparsity"]

@@ -75,7 +75,7 @@ def compute_retraining_metric(
                             model.n_agents,
                             model.hidden_size,
                             n_classes,
-                            ag_to_mask=1 - i,
+                            ag_to_mask=i,
                         )
                         for i in list(range(model.n_agents))[::-1] + [None]
                     ]
