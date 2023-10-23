@@ -8,11 +8,9 @@ Here, you will find a self-contained implementation of the code needed to create
 You will need to create a new environement and install the dynspec package locally, which will take care of most requirements
 
 ``
-conda create -n dynspec python=3.10
-
-conda activate dynspec
-
-pip install -e .
+  conda create -n dynspec python=3.10
+  conda activate dynspec
+  pip install -e .
 ``
 
 You will also need to install the correct pytorch version for your system separately, head over to https://pytorch.org/get-started/locally/
