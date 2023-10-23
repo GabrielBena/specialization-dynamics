@@ -7,6 +7,10 @@ from PIL import Image
 from torch.utils.data import Dataset
 import os
 
+"""
+Custom Datasets
+"""
+
 
 def data_transform(img, transform):
     if transform is not None:
@@ -223,7 +227,7 @@ class DoubleDataset(Dataset):
         if self.fix_asym:
             self.asym_idxs = self.get_asym_indexs()
         else:
-            self.asym_idxs = torch.arange(len(self.datasets[0]))
+            self.asym_idxs = np.arange(len(self.datasets[0]))
 
     def valid_idx(self, idx):
         idx1, idx2 = idx, self.cov_idxs[idx]
@@ -277,15 +281,16 @@ class DoubleDataset(Dataset):
 
 def get_datasets(root, data_config):
     
-    batch_size = data_config["batch_size"]
-    data_sizes = data_config["data_size"]
-    use_cuda = data_config["use_cuda"]
-    fix_asym = data_config["fix_asym"]
-    n_classes = data_config["n_classes_per_digit"]
-    split_classes = data_config["split_classes"]
-    permute = data_config["permute_dataset"]
-    seed = data_config["seed"]
-    cov_ratio = data_config["cov_ratio"]
+    batch_size = data_config.get("batch_size", 128)
+    data_sizes = data_config.get("data_size", None)
+    use_cuda = data_config.get("use_cuda", torch.cuda.is_available())   
+    n_classes = data_config.get("n_classes_per_digit", 10)
+
+    split_classes = data_config.get("split_classes", False)
+    fix_asym = data_config.get("fix_asym", True)
+    permute = data_config.get("permute_dataset", False)
+    seed = data_config.get("seed", 42)
+    cov_ratio = data_config.get("cov_ratio", 1.)
 
     train_kwargs = {"batch_size": batch_size, "shuffle": True, "drop_last": True}
     test_kwargs = {"batch_size": batch_size, "shuffle": False, "drop_last": True}

@@ -1,8 +1,15 @@
 import torch
 import numpy as np
 
+""" --------------------------------------------------------------------
+Dataset process utility functions
+""" 
+
 
 def flatten_list(l):
+    """
+    Flattens reccursively a list of lists
+    """
     assert isinstance(l, list)
 
     if isinstance(l[0], list):
@@ -12,6 +19,17 @@ def flatten_list(l):
 
 
 def add_structured_noise(data, n_samples=5, noise_ratio=0.9):
+    """
+    Generate a noisy version of a batch of samples, by adding noise from other samples in the batch
+
+    Args:
+        data (torch.Tensor): input (noiseless) data
+        n_samples (int, optional): number of other samples from batch to use as noise Defaults to 5.
+        noise_ratio (float, optional): ratio of noise to add to original data. Defaults to 0.9.
+
+    Returns:
+        torch.Tensor: noisy version of the input batch
+    """
     noised_idxs = np.stack(
         [
             np.random.choice(data.shape[0], size=n_samples, replace=False)
@@ -28,6 +46,17 @@ def add_structured_noise(data, n_samples=5, noise_ratio=0.9):
 def add_temporal_noise(
     data, n_samples=5, noise_ratio=0.9, random_start=False, common_input=False
 ):
+    """
+    Create a noisy version of a temporal input sequence, by adding random noise at every step.
+
+    Args:
+        data (torch.Tensor): input batch
+        random_start (bool, optional): Apply random timings to turn data ON from pure noise background. Defaults to False.
+        common_input (bool, optional): Wether input data is shared across modules or separate. Defaults to False.
+
+    Returns:
+        tuple: temporal version of the noisy data, and possible random timings
+    """
     # data should be shape n_steps x (n_agents) x n_sample x n_features
 
     data = data.transpose(1, 2)  # n_steps x n_samples x (n_agents) x n_features
@@ -71,7 +100,17 @@ def add_temporal_noise(
 
 def temporal_data(data, nb_steps=2, flatten=True, noise_ratio=None, random_start=False):
     """
-    Stack data in time for use with RNNs
+    Stack input data in time for use with RNNs
+
+    Args:
+        data (torch.tensor): input (non-temporal) batch
+        nb_steps (int, optional): number of computation steps. Defaults to 2.
+        flatten (bool, optional): Defaults to True.
+        noise_ratio (_type_, optional): adds noise at every time-step. Defaults to None.
+        random_start (bool, optional): add stochastic dynamics, where inputs are turned ON at random times from pure noise. Defaults to False.
+
+    Returns:
+        tuple: temporal version of the data, and possible random ON timings
     """
     is_list = type(data) is list
     if flatten and not is_list:
@@ -97,6 +136,15 @@ def temporal_data(data, nb_steps=2, flatten=True, noise_ratio=None, random_start
 
 
 def process_data(data, data_config):
+    """_summary_
+
+    Args:
+        data (_type_): _description_
+        data_config (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
     start_times = None
     nb_steps, noise_ratio, random_start = (
         data_config["nb_steps"],

@@ -10,6 +10,8 @@ authors = [
 description = "Code implementation for https://arxiv.org/abs/2106.02626"
 readme = "README.md"
 
-requires-python = ">=3.7"
-dependencies = ["torch", "torchvision", "numpy", "matplotlib", "ipykernel"]
+dependencies = ["numpy", "matplotlib", "ipykernel", "ipywidgets", "tqdm", "seaborn", "pandas"]
 dynamic = ["version"]
+
+[tool.setuptools]
+packages = ["dynspec"]
