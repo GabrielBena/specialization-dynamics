@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from itertools import product
-from torch.nn.utils.parametrize import register_parametrization as pm
+from torch.nn.utils.parametrize import register_parametrization as rpm
 
 
 def state_mask(n_agents, n_0, n_1, gru=False):
@@ -58,65 +58,16 @@ def comms_mask(sparsity, n_agents, n_hidden, gru=False):
     return masks
 
 
-class masked_RNN(nn.RNN):
-    def __init__(self, *args, masks, **kwargs):
-        super().__init__(*args, **kwargs)
-        [self.register_buffer(n, m) for n, m in masks.items()]
-        # for n, _ in self.named_parameters():
-        #     if "weight_hh" in n:
-        #         if n[-1] == str(self.num_layers - 1):
-        #             pm(
-        #                 self,
-        #                 n,
-        #                 lambda w: w * (self.comms_mask + self.rec_mask),
-        #             )
-        #         else:
-        #             pm(self, n, lambda w: w * self.rec_mask)
-        #     elif "weight_ih" in n and n[-1] != "0":
-        #         pm(self, n, lambda w: w * self.state_mask)
-        #     elif "weight_ih" in n and n[-1] == "0":
-        #         pm(self, n, lambda w: w * self.input_mask)
-
-    def forward(self, input, hx=None):
-        for n, p in self.named_parameters():
-            if "weight_hh" in n:
-                if n[-1] == str(self.num_layers - 1):
-                    p.data *= self.comms_mask + self.rec_mask
-                else:
-                    p.data *= self.rec_mask
-            elif "weight_ih" in n and n[-1] != "0":
-                # print(p.shape, self.input_mask.shape)
-                p.data *= self.state_mask
-            elif "weight_ih" in n and n[-1] == "0":
-                # print(p.shape, self.input_mask.shape)
-                p.data *= self.input_mask
-
-        return super().forward(input, hx=hx)
+cell_types_dict = {str(t): t for t in [nn.RNN, nn.GRU]}
 
 
-class masked_GRU(nn.GRU):
-    def __init__(self, *args, masks, **kwargs):
-        super().__init__(*args, **kwargs)
-        [self.register_buffer(n, m) for n, m in masks.items()]
+class Masked_weight(nn.Module):
+    def __init__(self, mask):
+        super().__init__()
+        self.register_buffer("mask", mask)
 
-    def forward(self, input, hx=None):
-        for n, p in self.named_parameters():
-            if "weight_hh" in n:
-                if n[-1] == str(self.num_layers - 1):
-                    p.data *= self.comms_mask + self.rec_mask
-                else:
-                    p.data *= self.rec_mask
-            elif "weight_ih" in n and n[-1] != "0":
-                # print(p.shape, self.input_mask.shape)
-                p.data *= self.state_mask
-            elif "weight_ih" in n and n[-1] == "0":
-                # print(p.shape, self.input_mask.shape)
-                p.data *= self.input_mask
-
-        return super().forward(input, hx=hx)
-
-
-cell_types_dict = {str(t): t for t in [masked_RNN, masked_GRU]}
+    def forward(self, W):
+        return W * self.mask
 
 
 def reccursive_readout(input, readout, common_readout, output_size):
@@ -138,13 +89,13 @@ def process_readout(input, readout, common_readout, output_size):
     return output
 
 
-def reccursive_masking(model, masks):
+def reccursive_rpm(model, mask):
     if isinstance(model, nn.ModuleList):
-        [reccursive_masking(m, mask) for m, mask in zip(model, masks)]
+        [reccursive_rpm(m, mask) for m in model]
     elif isinstance(model, nn.Sequential):
-        model[0].weight.data *= masks
+        rpm(model[0], "weight", Masked_weight(mask))
     else:
-        model.weight.data *= masks
+        rpm(model, "weight", Masked_weight(mask))
     return model
 
 
@@ -207,7 +158,6 @@ class Community(nn.Module):
             num_layers=self.n_layers,
             batch_first=False,
             bias=False,
-            masks=self.masks,
             dropout=self.dropout,
         )
 
@@ -228,16 +178,35 @@ class Community(nn.Module):
         else:
             self.readout = (
                 nn.Linear(
-                    self.n_agents * self.hidden_size, self.output_size * self.n_agents
+                    self.n_agents * self.hidden_size,
+                    self.output_size * self.n_agents,
+                    bias=False,
                 )
                 if not self.multi_readout
                 else nn.ModuleList(
                     [
-                        nn.Linear(self.n_agents * self.hidden_size, o * self.n_agents)
+                        nn.Linear(
+                            self.n_agents * self.hidden_size,
+                            o * self.n_agents,
+                            bias=False,
+                        )
                         for o in self.output_size
                     ]
                 )
             )
+
+        for n in dict(self.core.named_parameters()).copy().keys():
+            if "weight_hh" in n:
+                if n[-1] == str(self.n_layers - 1):
+                    rpm(self.core, n, Masked_weight(self.comms_mask + self.rec_mask))
+                else:
+                    rpm(self.core, n, Masked_weight(self.rec_mask))
+            elif "weight_ih" in n and n[-1] != "0":
+                rpm(self.core, n, Masked_weight(self.state_mask))
+            elif "weight_ih" in n and n[-1] == "0":
+                rpm(self.core, n, Masked_weight(self.input_mask))
+
+        reccursive_rpm(self.readout, self.output_mask)
 
     @property
     def multi_readout(self):
@@ -248,9 +217,6 @@ class Community(nn.Module):
 
     def forward(self, input):
         output, states = self.core(input)
-
-        if not self.common_readout:
-            reccursive_masking(self.readout, self.output_mask)
 
         output = reccursive_readout(
             output,
