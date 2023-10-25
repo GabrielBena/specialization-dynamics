@@ -34,8 +34,10 @@ class Custom_MNIST(MNIST):
         target_transform: Optional[Callable] = None,
         download: bool = False,
         truncate: list or int = None,
+        pre_transform: bool = True,
     ) -> None:
         self.truncate = np.array(truncate) if truncate is not None else truncate
+        self.pre_transform = pre_transform
         super().__init__(root, train, transform, target_transform, download)
 
     def _load_data(self):
@@ -57,20 +59,33 @@ class Custom_MNIST(MNIST):
             self.truncate_values = np.arange(10)
 
         self.n_classes = len(self.truncate_values)
-        # We pre-process data for speed at training time. No random transforms are used here
 
-        if self.transform is not None:
-            data = self.transform(data.float())
+        if self.pre_transform:
+            # We pre-process data for speed at training time. No random transforms are used here
 
-        if self.target_transform is not None:
-            targets = torch.stack(
-                [target_transform(t, self.target_transform) for t in targets]
-            )
+            if self.transform is not None:
+                data = data.numpy()
+                v_transform = np.vectorize(
+                    lambda d: data_transform(d, self.transform),
+                    signature="(n, n) -> (n, n)",
+                )
+                data = v_transform(data)
+                data = torch.from_numpy(data)
+
+            if self.target_transform is not None:
+                targets = torch.stack(
+                    [target_transform(t, self.target_transform) for t in targets]
+                )
 
         return data, targets
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         img, target = self.data[index], int(self.targets[index])
+
+        if not self.pre_transform:
+            if self.transform is not None:
+                img = self.transform(img)
+
         return img, target
 
     def __len__(self):
@@ -280,17 +295,16 @@ class DoubleDataset(Dataset):
 
 
 def get_datasets(root, data_config):
-    
     batch_size = data_config.get("batch_size", 128)
     data_sizes = data_config.get("data_size", None)
-    use_cuda = data_config.get("use_cuda", torch.cuda.is_available())   
+    use_cuda = data_config.get("use_cuda", torch.cuda.is_available())
     n_classes = data_config.get("n_classes_per_digit", 10)
 
     split_classes = data_config.get("split_classes", False)
     fix_asym = data_config.get("fix_asym", False)
     permute = data_config.get("permute_dataset", False)
     seed = data_config.get("seed", 42)
-    cov_ratio = data_config.get("cov_ratio", 1.)
+    cov_ratio = data_config.get("cov_ratio", 1.0)
 
     train_kwargs = {"batch_size": batch_size, "shuffle": True, "drop_last": True}
     test_kwargs = {"batch_size": batch_size, "shuffle": False, "drop_last": True}
@@ -300,7 +314,9 @@ def get_datasets(root, data_config):
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
-    transform_digits = transforms.Compose([transforms.Normalize((0.1307,), (0.3081,))])
+    transform_digits = transforms.Compose(
+        [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
+    )
 
     transform_letters = transforms.Compose(
         [
@@ -311,7 +327,7 @@ def get_datasets(root, data_config):
         ]
     )
 
-    truncate_digits = np.arange(n_classes)
+    # truncate_digits = np.arange(n_classes)
 
     kwargs = train_kwargs, test_kwargs
 
@@ -322,7 +338,6 @@ def get_datasets(root, data_config):
                 train=t,
                 download=True,
                 transform=transform_digits,
-                truncate=truncate_digits,
             )
             for t in [True, False]
         ]
