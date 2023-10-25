@@ -58,7 +58,7 @@ def comms_mask(sparsity, n_agents, n_hidden, gru=False):
     return masks
 
 
-cell_types_dict = {str(t): t for t in [nn.RNN, nn.GRU]}
+cell_types_dict = {str(t): t for t in [nn.RNN, nn.GRU, nn.RNNCell, nn.GRUCell]}
 
 
 class Masked_weight(nn.Module):
@@ -68,6 +68,16 @@ class Masked_weight(nn.Module):
 
     def forward(self, W):
         return W * self.mask
+
+
+class Scaled_mask_weight(nn.Module):
+    def __init__(self, mask, scale) -> None:
+        super().__init__()
+        scaled_mask = torch.ones_like(mask) + mask * (scale - 1)
+        self.register_buffer("scaled_mask", scaled_mask)
+
+    def forward(self, W):
+        return W * self.scaled_mask
 
 
 def reccursive_readout(input, readout, common_readout, output_size):
@@ -155,10 +165,10 @@ class Community(nn.Module):
         self.core = cell_types_dict[self.cell_type](
             input_size=self.input_size * self.n_agents,
             hidden_size=self.hidden_size * self.n_agents,
-            num_layers=self.n_layers,
-            batch_first=False,
+            # num_layers=self.n_layers,
+            # batch_first=False,
             bias=False,
-            dropout=self.dropout,
+            # dropout=self.dropout,
         )
 
         for n, m in self.masks.items():
@@ -197,14 +207,19 @@ class Community(nn.Module):
 
         for n in dict(self.core.named_parameters()).copy().keys():
             if "weight_hh" in n:
-                if n[-1] == str(self.n_layers - 1):
+                if n[-1] in [str(self.n_layers - 1), "h"]:
                     rpm(self.core, n, Masked_weight(self.comms_mask + self.rec_mask))
+                    rpm(
+                        self.core,
+                        n,
+                        Scaled_mask_weight(self.comms_mask.long(), scale=1),
+                    )
                 else:
                     rpm(self.core, n, Masked_weight(self.rec_mask))
+            elif "weight_ih" in n and n[-1] in ["0", "h"]:
+                rpm(self.core, n, Masked_weight(self.input_mask))
             elif "weight_ih" in n and n[-1] != "0":
                 rpm(self.core, n, Masked_weight(self.state_mask))
-            elif "weight_ih" in n and n[-1] == "0":
-                rpm(self.core, n, Masked_weight(self.input_mask))
 
         reccursive_rpm(self.readout, self.output_mask)
 
@@ -216,12 +231,19 @@ class Community(nn.Module):
             return isinstance(self.output_size, list)
 
     def forward(self, input):
-        output, states = self.core(input)
+        if "Cell" in self.cell_type:
+            outputs, states = [], None
+            for t, t_input in enumerate(input):
+                states = self.core(t_input, states)
+                outputs.append(states)
+            outputs = torch.stack(outputs)
+        else:
+            outputs, states = self.core(input)
 
-        output = reccursive_readout(
-            output,
+        outputs = reccursive_readout(
+            outputs,
             self.readout,
             self.common_readout,
             self.output_size,
         )
-        return output, states
+        return outputs, states

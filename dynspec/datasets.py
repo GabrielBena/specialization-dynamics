@@ -57,7 +57,7 @@ class Custom_MNIST(MNIST):
             self.truncate_values = np.arange(10)
 
         self.n_classes = len(self.truncate_values)
-        # We pre-process data for speed at training time
+        # We pre-process data for speed at training time. No random transforms are used here
 
         if self.transform is not None:
             data = self.transform(data.float())
