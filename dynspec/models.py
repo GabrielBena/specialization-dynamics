@@ -99,13 +99,13 @@ def process_readout(input, readout, common_readout, output_size):
     return output
 
 
-def reccursive_rpm(model, mask):
+def reccursive_rpm(model, masks):
     if isinstance(model, nn.ModuleList):
-        [reccursive_rpm(m, mask) for m in model]
+        [reccursive_rpm(m, mask) for m, mask in zip(model, masks)]
     elif isinstance(model, nn.Sequential):
-        rpm(model[0], "weight", Masked_weight(mask))
+        rpm(model[0], "weight", Masked_weight(masks))
     else:
-        rpm(model, "weight", Masked_weight(mask))
+        rpm(model, "weight", Masked_weight(masks))
     return model
 
 
@@ -165,10 +165,10 @@ class Community(nn.Module):
         self.core = cell_types_dict[self.cell_type](
             input_size=self.input_size * self.n_agents,
             hidden_size=self.hidden_size * self.n_agents,
-            # num_layers=self.n_layers,
-            # batch_first=False,
+            num_layers=self.n_layers,
+            batch_first=False,
             bias=False,
-            # dropout=self.dropout,
+            dropout=self.dropout,
         )
 
         for n, m in self.masks.items():
@@ -207,7 +207,7 @@ class Community(nn.Module):
 
         for n in dict(self.core.named_parameters()).copy().keys():
             if "weight_hh" in n:
-                if n[-1] in [str(self.n_layers - 1), "h"]:
+                if n[-1] == str(self.n_layers - 1):
                     rpm(self.core, n, Masked_weight(self.comms_mask + self.rec_mask))
                     rpm(
                         self.core,
@@ -216,7 +216,7 @@ class Community(nn.Module):
                     )
                 else:
                     rpm(self.core, n, Masked_weight(self.rec_mask))
-            elif "weight_ih" in n and n[-1] in ["0", "h"]:
+            elif "weight_ih" in n and n[-1] == "0":
                 rpm(self.core, n, Masked_weight(self.input_mask))
             elif "weight_ih" in n and n[-1] != "0":
                 rpm(self.core, n, Masked_weight(self.state_mask))
