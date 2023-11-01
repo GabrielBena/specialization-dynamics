@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from tqdm.notebook import tqdm as tqdm_n
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 import copy
 
 from dynspec.data_process import process_data
@@ -98,29 +98,38 @@ def train_community(
     show_all_acc=False,
     stop_acc=None,
     device="cuda",
+    pbar=None,
 ):
     n_epochs = config["training"]["n_epochs"] if n_epochs is None else n_epochs
     task = config["training"]["task"]
+    if task == "parity-digits-both":
+        task = config["training"]["task"] = ["parity-digits", "inv_parity-digits"]
+        show_acc = False
+
     decision = config["decision"]
     n_classes_per_digit = config["data"]["n_classes_per_digit"]
 
-    descs = ["" for _ in range(2)]
-    desc = lambda descs: descs[0] + descs[1]
+    descs = ["" for _ in range(2 + (pbar is not None))]
+    desc = lambda descs: np.array(descs, dtype=object).sum()
     train_losses, train_accs = [], []
     test_accs, test_losses, all_accs = [], [], []
-    deciding_agents = []
+    deciding_modules = []
     best_loss, best_acc = 1e10, 0.0
     training, testing = trials
-    pbar = range(n_epochs + 1)
 
     tqdm_f = tqdm_n if is_notebook() else tqdm
     if use_tqdm:
-        pbar = tqdm_f(pbar, position=0, leave=None, desc="Train Epoch:")
+        pbar_e = range(n_epochs + 1)
+        if pbar is None:
+            pbar_e = tqdm_f(pbar_e, position=0, leave=None, desc="Train Epoch:")
+            pbar = pbar_e
+        else:
+            descs[0] = pbar.desc
 
     # model = torch.compile(model)
 
     train_loader, test_loader = loaders
-    for epoch in pbar:
+    for epoch in pbar_e:
         if training and epoch > 0:
             model.train()
             for batch_idx, (data, target) in enumerate(train_loader):
@@ -150,7 +159,7 @@ def train_community(
                         deciding_ags is not None
                         and train_loader.batch_size in deciding_ags.shape
                     ):
-                        deciding_agents.append(deciding_ags.cpu().data.numpy())
+                        deciding_modules.append(deciding_ags.cpu().data.numpy())
                 except AttributeError:
                     deciding_ags = None
 
@@ -162,7 +171,7 @@ def train_community(
                 train_accs.append(acc)
 
                 loss.backward()
-                if config["training"]["check_grad"]:
+                if config["training"].get("check_grad", False):
                     check_grad(model)
                 train_losses.append(loss.cpu().data.item())
 
@@ -173,11 +182,12 @@ def train_community(
                 else:
                     show_acc = np.round(100 * np.mean(acc))
 
-                # Apply gradients on agents weights
+                # Apply gradients on modules weights
                 optimizer.step()
-                descs[0] = str(
-                    "Train Epoch: {} [{}/{} ({:.0f}%)] Loss: {:.2f}, Accuracy: {}, Dec : {:.3f}%".format(
+                descs[-2] = str(
+                    "Train Epoch: {}/{} [{}/{} ({:.0f}%)] Loss: {:.2f}, Accuracy: {} %".format(
                         epoch,
+                        n_epochs,
                         batch_idx * train_loader.batch_size,
                         len(train_loader.dataset),
                         100.0 * batch_idx / len(train_loader),
@@ -185,7 +195,7 @@ def train_community(
                         if False
                         else torch.round(loss, decimals=1).item(),
                         show_acc,
-                        np.mean(deciding_agents),
+                        # np.mean(deciding_modules) if len(deciding_modules) else None,
                     )
                 )
 
@@ -200,7 +210,7 @@ def train_community(
                 config,
                 show_all_acc,
             )
-            descs[1] = test_results["desc"]
+            descs[-1] = test_results["desc"]
 
             if test_results["test_loss"] < best_loss:
                 best_loss = test_results["test_loss"]
@@ -225,7 +235,7 @@ def train_community(
             "test_losses": np.array(test_losses),
             "test_accs": np.array(test_accs),  # n_epochs x n_tasks
             "all_accs": np.array(all_accs),  # n_epochs x n_tasks x n_data
-            "deciding_agents": np.array(deciding_agents),
+            "deciding_modules": np.array(deciding_modules),
             "best_state": best_state,
         }
 
@@ -244,10 +254,11 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
     test_loss = 0
     test_accs = []
     all_accs = []
-    deciding_agents = []
+    deciding_modules = []
 
     decision = config["decision"]
     task = config["training"]["task"]
+
     n_classes_per_digit = config["data"]["n_classes_per_digit"]
 
     with torch.no_grad():
@@ -272,7 +283,7 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
                     deciding_ags is not None
                     and test_loader.batch_size in deciding_ags.shape
                 ):
-                    deciding_agents.append(deciding_ags.cpu().data.numpy())
+                    deciding_modules.append(deciding_ags.cpu().data.numpy())
             except AttributeError:
                 deciding_ags = None
 
@@ -288,7 +299,7 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
 
     acc = np.array(test_accs).mean(0)
 
-    deciding_agents = np.array(deciding_agents)
+    deciding_modules = np.array(deciding_modules)
 
     if show_all_acc is True:
         show_acc = nested_round(acc)
@@ -308,7 +319,7 @@ def test_community(model, device, test_loader, config, show_all_acc=False):
         "desc": desc,
         "test_loss": test_loss.cpu().data.item(),
         "test_acc": acc,
-        "deciding_agents": deciding_agents,
+        "deciding_modules": deciding_modules,
         "all_accs": np.concatenate(all_accs, -1),
     }
 

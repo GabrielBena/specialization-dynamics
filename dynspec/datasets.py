@@ -364,11 +364,11 @@ def get_datasets(root, data_config):
             truncates = truncates[truncates != e]
         # np.random.shuffle(truncates)
         if split_classes:
-            assert n_classes <= 17, "Max 17 classes for a separate set for each agents"
+            assert n_classes <= 17, "Max 17 classes for a separate set for each modules"
             truncates = truncates[: n_classes * 2]
             truncates = np.split(truncates, 2)
         else:
-            assert n_classes <= 34, "Max 34 classes for the same set for each agents"
+            assert n_classes <= 34, "Max 34 classes for the same set for each modules"
             truncates = truncates[:n_classes]
             truncates = truncates, truncates
 
@@ -442,9 +442,9 @@ def get_datasets(root, data_config):
 
 
 if __name__ == "__main__":
-    n_agents = 2
+    n_modules = 2
     n_classes_per_digit = 10
-    n_classes = n_classes_per_digit * n_agents
+    n_classes = n_classes_per_digit * n_modules
     nb_steps = 5
 
     data_config = {
@@ -453,7 +453,7 @@ if __name__ == "__main__":
         "input_size": 28,
         "use_cuda": torch.cuda.is_available(),
         "data_type": "double_digits",
-        "n_digits": n_agents,
+        "n_digits": n_modules,
         "n_classes": n_classes,
         "n_classes_per_digit": n_classes_per_digit,
         "nb_steps": nb_steps,
