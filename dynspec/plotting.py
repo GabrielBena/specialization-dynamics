@@ -2,8 +2,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from dynspec.metrics import global_diff_metric
+from dynspec.metrics import global_diff_metric, diff_metric
 import pandas as pd
+from matplotlib.colors import LogNorm
 
 
 def set_style():
@@ -167,3 +168,152 @@ def plot_retraining_results(experiment):
         # plt.yscale("log")
         ax.set_xlabel(x_label)
         ax.set_ylabel("Model Specialization")
+
+
+def plot_random_timings(experiment):
+    plot_data = {
+        "t0": [],
+        "t1": [],
+        "t0_t1": [],
+        "step": [],
+        "local_metric": [],
+        "ag": [],
+    }
+
+    for vp, results in zip(
+        experiment.all_varying_params, experiment.results["random_timing"]
+    ):
+        test = 0
+        u_masks, accs, start_times = (
+            results["all_u_masks"],
+            results["all_accs"],
+            results["all_start_times"],
+        )
+        nb_steps = experiment.default_config["data"]["nb_steps"]
+        n_modules = experiment.default_config["modules"]["n_modules"]
+        for mask, pair in zip(u_masks, start_times.unique(dim=0)):
+            for step, accs_step in enumerate(accs[test]):
+                for ag, accs_ag in enumerate(accs_step):
+                    # plot_data['global_metric'].append(diff_metric(all_accs[step, -1, :, mask].mean(0)))
+                    plot_data["local_metric"].append(
+                        diff_metric(accs_ag[:, mask].mean(1))
+                    )
+                    # plot_data['local_metric_1'].append(diff_metric(all_accs[step, 1, :, mask].mean(0)))
+                    plot_data["t0"].append(pair[0].item())
+                    plot_data["t1"].append(pair[1].item())
+                    plot_data["t0_t1"].append(tuple(pair.cpu().data.numpy()))
+                    plot_data["step"].append(step)
+                    plot_data["ag"].append(ag)
+                    for k, v in vp.items():
+                        plot_data.setdefault(k, [])
+                        plot_data[k].append(v)
+                    # plot_data['x'].append([-1, 1][ag] * (accs.shape[0] - step))
+                    # plot_data['x'].append(step)
+
+            # plot_data['local_metric'].append(diff_metric(accs[step, -1, :, mask].mean(0)))
+            # plot_data['t0'].append(pair[0].item())
+            # plot_data['t1'].append(pair[1].item())
+            # plot_data['t0_t1'].append(tuple(pair.cpu().data.numpy()))
+            # plot_data['step'].append(nb_steps)
+            # plot_data['ag'].append(-1)
+
+    plot_data = pd.DataFrame.from_dict(plot_data)
+    last_ts_data = [
+        filter_data(plot_data, {"ag": 2, "step": nb_steps - 1})[0]
+        for _ in range(n_modules)
+    ]
+    for ag, data in enumerate(last_ts_data):
+        data.loc[:, "ag"] = ag
+        data.loc[:, "step"] = nb_steps
+
+    last_ts_data = pd.concat(last_ts_data)
+    plot_data = filter_data(pd.concat([plot_data, last_ts_data]), {"!ag": 2})[0]
+    fig, axs = plt.subplots(
+        3,
+        3,
+        figsize=(3 * 3.5, 3 * 2),
+        constrained_layout=True,
+        sharex=True,
+        sharey=True,
+    )
+    set_style()
+
+    for u, ax in zip(plot_data["t0_t1"].unique(), axs.T.flatten()):
+        t0, t1 = u
+        sns.lineplot(
+            filter_data(
+                plot_data,
+                {
+                    "t0_t1": u,
+                },  # "sparsity": [sparsities[i] for i in [0, 1, 2, 3, 4]]},
+            )[0],
+            y="local_metric",
+            x="step",
+            ax=ax,
+            style="ag",
+            hue="sparsity",
+            palette="viridis",
+            hue_norm=LogNorm(),
+        )
+        # ax.vlines(x = [t0 - 0.5 ], ymin = -1, ymax = 1, color = 'blue', alpha = .2)
+        # ax.vlines(x = [t1 - 0.5 ], ymin = -1, ymax = 1, color = 'red', alpha = .2)
+        c1 = ax.fill_betweenx([0.1, 1], 0, nb_steps, alpha=0.5, label="M0")
+        c2 = ax.fill_betweenx([-0.1, -1], 0, nb_steps, alpha=0.5, label="M1")
+
+        ax.arrow(
+            t0 - 0.5,
+            0,
+            0,
+            1,
+            alpha=0.5,
+            width=0.1,
+            head_width=0.2,
+            facecolor=c1.get_facecolor()[0],
+            edgecolor="black",
+            length_includes_head=True,
+            linewidth=1,
+        )
+        ax.arrow(
+            t1 - 0.5,
+            0,
+            0,
+            -1,
+            alpha=0.5,
+            width=0.1,
+            head_width=0.2,
+            facecolor=c2.get_facecolor()[0],
+            edgecolor="black",
+            length_includes_head=True,
+            linewidth=1,
+        )
+        ax.legend()
+        # ax.set_title(u)
+
+        if t1 == 3:
+            ax.set_xlabel("")
+        else:
+            ax.set_xlabel("")
+
+        if t0 == 1:
+            ax.set_ylabel("")
+        else:
+            ax.set_ylabel("")
+
+        ax.legend().remove()
+
+        ax.grid(True, alpha=0.2, linestyle="dashed", linewidth=2, color="grey")
+        ax.set_yticklabels([])
+        ax.set_xticklabels([])
+
+        for tick in ax.xaxis.get_major_ticks():
+            tick.tick1line.set_visible(False)
+            tick.tick2line.set_visible(False)
+            tick.label1.set_visible(False)
+            tick.label2.set_visible(False)
+        for tick in ax.yaxis.get_major_ticks():
+            tick.tick1line.set_visible(False)
+            tick.tick2line.set_visible(False)
+            tick.label1.set_visible(False)
+            tick.label2.set_visible(False)
+
+    plt.show()

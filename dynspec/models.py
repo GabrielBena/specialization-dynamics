@@ -262,10 +262,10 @@ class Readout(nn.Module):
         if isinstance(readout, nn.ModuleList):
             out = [
                 self.reccursive_readout(input, r, size)
-                for r, size in zip(readout, self.output_size)
+                for r, size in zip(readout, output_size)
             ]
         else:
-            out = self.process_readout(input, readout, self.output_size)
+            out = self.process_readout(input, readout, output_size)
 
         return out
 

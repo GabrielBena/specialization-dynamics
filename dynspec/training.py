@@ -19,6 +19,13 @@ def is_notebook():
     return notebook
 
 
+def reccursive_stack(input):
+    try:
+        return torch.stack(input)
+    except TypeError:
+        return torch.stack([reccursive_stack(i) for i in input])
+
+
 def nested_round(acc):
     try:
         round = np.round(np.array(acc) * 100, 0).astype(float)
@@ -165,7 +172,6 @@ def train_community(
 
                 complete_loss = get_loss(output, t_target, use_both=both)
                 loss = nested_mean(complete_loss)
-
                 acc, _ = get_acc(output, t_target, use_both=both)
 
                 train_accs.append(acc)

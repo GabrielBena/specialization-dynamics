@@ -110,7 +110,7 @@ def get_task_target(target, task, n_classes):
         for task in tasks:
             new_target = get_single_task(task, new_target, n_classes)
 
-        if len(new_target.shape) == 2:
+        if hasattr(new_target, "shape") and len(new_target.shape) == 2:
             new_target = new_target.T
             # new_target = list(new_target.split(1, 0))
 

@@ -7,7 +7,11 @@ import copy
 from hashlib import sha1
 from dynspec.models import init_model
 from dynspec.training import train_community
-from dynspec.metrics import compute_retraining_metric, global_diff_metric
+from dynspec.metrics import (
+    compute_retraining_metric,
+    create_retraining_model,
+    compute_random_timing_metric,
+)
 
 
 def find_and_change(config, param_name, param_value):
@@ -132,7 +136,6 @@ class Experiment(object):
         for model, optimizer, config, v_p in zip(
             exp_bar, self.optimizers, self.all_configs, self.all_varying_params
         ):
-            print(kwargs)
             exp_bar.set_description(f"{v_p} ")
             train_results.append(
                 train_community(
@@ -154,7 +157,7 @@ class Experiment(object):
         if save:
             self.save_result_df()
 
-    def compute_retraining_metric(
+    def compute_retraining(
         self, loaders, save=False, device="cuda" if torch.cuda.is_available() else "cpu"
     ):
         retrain_results = []
@@ -185,6 +188,20 @@ class Experiment(object):
         self.results["retrain_models"] = [m.state_dict() for m in retraining_models]
         self.results["retrain_configs"] = retraining_configs
         self._retrained_models = retraining_models
+        if save:
+            self.save_result_df()
+
+    def compute_random_timing(
+        self, loaders, device="cuda" if torch.cuda.is_available() else "cpu", save=False
+    ):
+        tqdm_f = tqdm_n if is_notebook() else tqdm
+
+        random_timing_results = []
+        for net, config in zip(tqdm_f(self.retrained_models), self.all_configs):
+            random_timing_results.append(
+                compute_random_timing_metric(net, loaders, config, device)
+            )
+        self.results["random_timing"] = random_timing_results
         if save:
             self.save_result_df()
 
@@ -226,11 +243,13 @@ class Experiment(object):
             ), "No models found, run experiment first"
             self._retrained_models = []
             for state_dict, config in zip(
-                self.results["retrain_models"].values, self.results["retrain_configs"]
+                self.results["retrain_models"].values, self.all_configs
             ):
                 model, _ = init_model(config)
+                model, _ = create_retraining_model(model, config)
                 model.load_state_dict(state_dict)
                 self._retrained_models.append(model)
+            return self._retrained_models
 
     def __repr__(self) -> str:
         return f"Experiment with {len(self.models)} models, and vaying params: {self.varying_params}"

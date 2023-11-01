@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from dynspec.training import train_community
+from dynspec.training import train_community, is_notebook, get_acc
 from dynspec.models import Readout, init_model
 from dynspec.datasets import get_datasets
+from dynspec.data_process import process_data
+from tqdm.notebook import tqdm as tqdm_n
+from tqdm.notebook import tqdm
 
 metric_norm = lambda m: np.clip(m - 0.1 / (1 - 0.1), 0, 1)
 diff_metric = lambda metric: (metric[0] - metric[1]) / ((metric[0]) + (metric[1]))
@@ -14,6 +17,13 @@ global_diff_metric = (
     )
     / 2
 )
+
+
+def reccursive_stack(input):
+    try:
+        return torch.stack(input)
+    except TypeError:
+        return torch.stack([reccursive_stack(i) for i in input])
 
 
 def readout_mask(n_modules, n_in, n_out, ag_to_mask=None):
@@ -37,33 +47,27 @@ def readout_mask(n_modules, n_in, n_out, ag_to_mask=None):
     return mask
 
 
-def compute_retraining_metric(
+def create_retraining_model(
     original_model,
     config,
-    loaders,
-    device=torch.device("cuda"),
-    use_tqdm=False,
-    **kwargs,
+    device=torch.device("cuda") if torch.cuda.is_available() else "cpu",
 ):
-    # model = copy.deepcopy(original_model)
-
     state_dict_copy = original_model.state_dict().copy()
     model, _ = init_model(config, device=device)
     model.load_state_dict(state_dict_copy)
     retraining_config = config.copy()
 
     n_classes = config["data"]["n_classes_per_digit"]
-    nb_steps = config["data"]["nb_steps"]
     n_modules = config["modules"]["n_modules"]
     ag_hidden_size = config["modules"]["hidden_size"]
     n_targets = 2
 
     retraining_config["readout"]["output_size"] = [
-        [n_classes for _ in range(n_targets)] for _ in range(n_modules + 1)
+        [n_classes for _ in range(n_modules + 1)] for _ in range(n_targets)
     ]
     n_hid = 30
     retraining_config["readout"]["n_hid"] = [
-        [n_hid for _ in range(n_targets)] for _ in range(n_modules + 1)
+        [n_hid for _ in range(n_modules + 1)] for _ in range(n_targets)
     ]
     retraining_config["readout"]["common_readout"] = True
     retraining_config["readout"]["retraining"] = True
@@ -103,6 +107,25 @@ def compute_retraining_metric(
             p.requires_grad = False
 
     model.to(device)
+    return model, retraining_config
+
+
+def compute_retraining_metric(
+    original_model,
+    config,
+    loaders,
+    device=torch.device("cuda") if torch.cuda.is_available() else "cpu",
+    use_tqdm=False,
+    **kwargs,
+):
+    nb_steps = config["data"]["nb_steps"]
+    n_modules = config["modules"]["n_modules"]
+    n_targets = 2
+
+    model, retraining_config = create_retraining_model(
+        original_model, config, device=device
+    )
+
     retraining_config["decision"] = ("none", "none")
 
     retraining_config["training"]["task"] = [
@@ -133,6 +156,57 @@ def compute_retraining_metric(
 
 def compute_ablations_metric():
     return
+
+
+def compute_random_timing_metric(model, loaders, config, device):
+    random_config = config.copy()
+    random_config["data"]["random_start"] = True
+
+    nb_steps = config["data"]["nb_steps"]
+    n_modules = config["modules"]["n_modules"]
+    n_targets = 2
+
+    all_outputs = []
+    all_start_times = []
+    all_targets = []
+
+    for data, target in loaders[1]:
+        data, start_times = process_data(data, random_config["data"])
+        data, target = data.to(device), target.to(device)
+        outputs, _ = model(data)
+        outputs = reccursive_stack(outputs).transpose(0, 2).squeeze()
+        all_outputs.append(outputs)  # steps x modules x target
+        all_start_times.append(start_times)
+        all_targets.append(target)
+
+    all_outputs = torch.cat(all_outputs, -2).unsqueeze(0)
+    all_start_times = torch.cat(all_start_times, -2)
+    all_targets = torch.cat(all_targets, -2).unsqueeze(0)
+
+    all_accs = np.stack(
+        [
+            get_acc(
+                out,
+                [
+                    [[t for t in target.T] for _ in range(n_modules + 1)]
+                    for _ in range(nb_steps)
+                ],
+            )[1]
+            for out, target in zip(all_outputs, all_targets)
+        ]
+    )
+
+    all_u_masks = [
+        (all_start_times == u).all(-1) for u in all_start_times.unique(dim=0)
+    ]
+
+    return {
+        "all_accs": all_accs,
+        "all_u_masks": all_u_masks,
+        "all_outputs": all_outputs,
+        "all_targets": all_targets,
+        "all_start_times": all_start_times,
+    }
 
 
 if __name__ == "__main__":

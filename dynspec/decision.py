@@ -30,7 +30,7 @@ def random_decision(outputs, p=0.5):
 def max_decision(outputs):
     """
     Get the readout from module that produced the maximum overall value
-    Note that this is NOT a 
+    Note that this is NOT a
 
     Args:
         outputs (_type_): _description_
@@ -38,7 +38,7 @@ def max_decision(outputs):
     Returns:
         _type_: _description_
     """
-    
+
     device = outputs.device
     n_modules = outputs.shape[0]
 
@@ -117,7 +117,9 @@ def get_module_decision(outputs, module_decision):
 
 def get_decision(outputs, temporal_decision="last", module_decision="0"):
     if isinstance(outputs, list):
-        decs = [get_decision(out, temporal_decision, module_decision) for out in outputs]
+        decs = [
+            get_decision(out, temporal_decision, module_decision) for out in outputs
+        ]
         outputs = [dec[0] for dec in decs]
         deciding_ags = [dec[1] for dec in decs]
         return torch.stack(outputs, -3), deciding_ags
