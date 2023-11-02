@@ -101,6 +101,7 @@ def plot_model_masks(experiment, plot_input=False):
 
 
 def plot_accs(general_training_results):
+    set_style()
     train_results, all_varying_params = (
         general_training_results["train_results"],
         general_training_results["varying_params"],
@@ -113,7 +114,7 @@ def plot_accs(general_training_results):
     fig, axs = plt.subplots(
         n1,
         n2,
-        figsize=(3 * n2, n1 * 1.5),
+        figsize=(2.5 * n2, n1 * 1.5),
         constrained_layout=True,
         sharey=True,
         sharex=True,
@@ -123,10 +124,14 @@ def plot_accs(general_training_results):
 
     for vp, t, ax in zip(all_varying_params, train_results, axs.flatten()):
         ax.plot(t["test_accs"].reshape(t["test_accs"].shape[0], -1))
-        ax.set_title(vp)
+
+        legend = {"hidden_size": "n", "sparsity": "p"}
+        vp_legend = ", ".join([f"{legend[k]} = {v}" for k, v in vp.items()])
+        ax.set_title(vp_legend)
 
 
 def plot_retraining_results(experiment):
+    set_style()
     retrain_global_data = {k: [] for k in ["metric", "step"]}
     for r_accs, vp in zip(
         experiment.results["retrain_accs"], experiment.all_varying_params

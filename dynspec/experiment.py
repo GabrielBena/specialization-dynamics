@@ -1,7 +1,7 @@
 import torch
 import pandas as pd
 from tqdm.notebook import tqdm as tqdm_n
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from itertools import product
 import copy
 from hashlib import sha1
@@ -192,7 +192,7 @@ class Experiment(object):
             self.save_result_df()
 
     def compute_random_timing(
-        self, loaders, device="cuda" if torch.cuda.is_available() else "cpu", save=False
+        self, loaders, device="cuda" if torch.cuda.is_available() else "cpu"
     ):
         tqdm_f = tqdm_n if is_notebook() else tqdm
 
@@ -202,8 +202,6 @@ class Experiment(object):
                 compute_random_timing_metric(net, loaders, config, device)
             )
         self.results["random_timing"] = random_timing_results
-        if save:
-            self.save_result_df()
 
     @property
     def all_configs(self):
@@ -236,20 +234,23 @@ class Experiment(object):
         if hasattr(self, "_retrained_models"):
             return self._retrained_models
         else:
-            assert (
+            if not (
                 hasattr(self, "results")
                 and hasattr(self.results, "columns")
                 and ("retrain_models" in self.results.columns)
-            ), "No models found, run experiment first"
-            self._retrained_models = []
-            for state_dict, config in zip(
-                self.results["retrain_models"].values, self.all_configs
             ):
-                model, _ = init_model(config)
-                model, _ = create_retraining_model(model, config)
-                model.load_state_dict(state_dict)
-                self._retrained_models.append(model)
-            return self._retrained_models
+                print("No models found, run experiment first")
+                return None
+            else:
+                self._retrained_models = []
+                for state_dict, config in zip(
+                    self.results["retrain_models"].values, self.all_configs
+                ):
+                    model, _ = init_model(config)
+                    model, _ = create_retraining_model(model, config)
+                    model.load_state_dict(state_dict)
+                    self._retrained_models.append(model)
+                return self._retrained_models
 
     def __repr__(self) -> str:
         return f"Experiment with {len(self.models)} models, and vaying params: {self.varying_params}"
