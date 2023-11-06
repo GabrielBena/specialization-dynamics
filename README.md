@@ -18,4 +18,5 @@ You will also need to install the correct pytorch version for your system separa
 You're all set !
 
 ## Example
-You will find a main example in example/simple_code.ipynb. This notebook shows how to create and train architecture with varying parameters, and their resulting specialization levels and dynamics.  
+You will find a main example in the notebook modular_networks.ipynb. This notebook shows how to create and train architecture with varying parameters, and their resulting specialization levels and dynamics. It goes over all the main findings of the paper, in a straightforward fashion. 
+
