@@ -58,6 +58,20 @@ def max_decision(outputs):
 
 
 def get_temporal_decision(outputs, temporal_decision):
+    """
+    Given a tensor of outputs and a temporal decision, returns a tensor of outputs based on the decision.
+
+    Args:
+        outputs (torch.Tensor): A tensor of outputs.
+        temporal_decision (str or int): A string indicating the type of temporal decision to make, or an integer
+            indicating the specific time step to use.
+
+    Returns:
+        torch.Tensor: A tensor of outputs based on the temporal decision.
+
+    Raises:
+        ValueError: If the temporal decision is not recognized.
+    """
     try:
         deciding_ts = int(temporal_decision)
         outputs = outputs[deciding_ts]
@@ -79,6 +93,22 @@ def get_temporal_decision(outputs, temporal_decision):
 
 
 def get_module_decision(outputs, module_decision):
+    """
+    Given a set of outputs and a module decision, returns the selected outputs and the corresponding decision indices.
+
+    Args:
+        outputs (torch.Tensor): The outputs to select from.
+        module_decision (str or int or None): The decision method to use. If an integer is provided, the outputs from the
+            corresponding module are selected. If "max", the outputs with the highest value are selected. If "random", a
+            random output is selected. If "sum", the outputs are summed along the first dimension. If "self", the outputs
+            corresponding to each agent are selected. If "both", "all", "none", or None, no outputs are selected.
+
+    Returns:
+        torch.Tensor or list of torch.Tensor or None: The selected outputs. If multiple outputs are selected, they are
+            returned as a list. If no outputs are selected, None is returned.
+        torch.Tensor or None: The decision indices. If multiple outputs are selected, they are returned as a list of
+            indices. If no outputs are selected, None is returned.
+    """
     try:
         deciding_ags = int(module_decision)
         outputs = outputs[deciding_ags]
@@ -115,7 +145,20 @@ def get_module_decision(outputs, module_decision):
     return outputs, deciding_ags
 
 
-def get_decision(outputs, temporal_decision="last", module_decision="0"):
+def get_decision(outputs, temporal_decision="last", module_decision="max"):
+    """
+    Given a set of outputs from a neural network, returns a decision based on the specified temporal and module decision methods.
+
+    Args:
+        outputs (list or tensor): The outputs from a neural network.
+        temporal_decision (str): The temporal decision method to use. Can be "last" (default), "mean",  or an integer
+            indicating the specific time step to use..
+        module_decision (str): The module decision method to use. Can be "max" (default), "sum", or  or an integer
+            indicating the specific module to use. Can also be a combination of these methods separated by underscores.
+
+    Returns:
+        tuple: A tuple containing the decision tensor and the indices of the agents that made the decision.
+    """
     if isinstance(outputs, list):
         decs = [
             get_decision(out, temporal_decision, module_decision) for out in outputs

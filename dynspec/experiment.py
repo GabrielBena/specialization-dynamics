@@ -10,13 +10,24 @@ from dynspec.training import train_community
 from dynspec.retraining import (
     compute_retraining_metric,
     create_retraining_model,
-    compute_random_timing_metric,
+    compute_random_timing_dynamics,
     compute_ablations_metric,
 )
 from dynspec.correlations import compute_correlation_metric
 
 
 def find_and_change(config, param_name, param_value):
+    """
+    Recursively searches through a dictionary `config` for a key `param_name` and changes its value to `param_value`.
+
+    Args:
+        config (dict): The dictionary to search through.
+        param_name (str): The name of the parameter to search for.
+        param_value (any): The new value to set the parameter to.
+
+    Returns:
+        dict: The modified dictionary.
+    """
     for key, value in config.items():
         if type(value) is dict:
             find_and_change(value, param_name, param_value)
@@ -28,6 +39,16 @@ def find_and_change(config, param_name, param_value):
 
 
 def copy_and_change_config(config, varying_params):
+    """
+    Creates a deep copy of the given configuration and changes the values of the specified parameters.
+
+    Args:
+        config (dict): The configuration to copy and modify.
+        varying_params (dict): A dictionary of parameter names and their new values.
+
+    Returns:
+        dict: The modified configuration.
+    """
     config = copy.deepcopy(config)
     for n, v in varying_params.items():
         find_and_change(config, n, v)
@@ -36,6 +57,16 @@ def copy_and_change_config(config, varying_params):
 
 
 def get_all_v_params(varying_params, excluded_params={}):
+    """
+    Returns a list of dictionaries, where each dictionary contains a combination of varying parameters.
+
+    Args:
+    - varying_params (dict): A dictionary where each key is a parameter name and each value is a list of parameter values.
+    - excluded_params (dict): A dictionary where each key is a parameter name that should be excluded from the output.
+
+    Returns:
+    - A list of dictionaries, where each dictionary contains a combination of varying parameters.
+    """
     return [
         {
             k: p
@@ -56,6 +87,42 @@ def is_notebook():
 
 
 class Experiment(object):
+    """
+    A class for running experiments with varying parameters and configurations.
+
+    Args:
+        default_config (dict): The default configuration for the experiment.
+        varying_params (dict): A dictionary of varying parameters and their possible values.
+        load_save (bool): Whether to load previously saved results or create new ones.
+        device (str, optional): The device to run the experiment on. Defaults to "cuda" if available, else "cpu".
+        n_tests (int, optional): The number of tests to run for each combination of varying parameters. Defaults to 1.
+        hash_type (int, optional): The type of hash to use for saving and loading results. Defaults to 2.
+
+    Attributes:
+        varying_params (dict): A dictionary of varying parameters and their possible values.
+        all_varying_params (list): A list of all possible combinations of varying parameters.
+        default_config (dict): The default configuration for the experiment.
+        _models (list): A list of all models used in the experiment.
+        optimizers (list): A list of all optimizers used in the experiment.
+        hash_type (int): The type of hash used for saving and loading results.
+        results (DataFrame): A DataFrame containing the results of the experiment.
+        result_path (str): The path to the file where the results are saved.
+
+    Methods:
+        load_result_df(): Loads the results of the experiment from a file.
+        save_result_df(): Saves the results of the experiment to a file.
+        run(): Runs the experiment.
+        compute_retraining(): Computes the retraining metric for the experiment.
+        compute_random_timing(): Computes the random timing metric for the experiment.
+        compute_correlations(): Computes the correlations metric for the experiment.
+        compute_ablations(): Computes the ablations metric for the experiment.
+
+    Properties:
+        all_configs (list): A list of all possible configurations for the experiment.
+        models (list): A list of all models used in the experiment.
+        retrained_models (list): A list of all retrained models used in the experiment.
+    """
+
     def __init__(
         self,
         default_config,
@@ -237,7 +304,7 @@ class Experiment(object):
         random_timing_results = []
         for net, config in zip(tqdm_f(self.retrained_models), self.all_configs):
             random_timing_results.append(
-                compute_random_timing_metric(net, loaders, config, device)
+                compute_random_timing_dynamics(net, loaders, config, device)
             )
         self.results["random_timing"] = random_timing_results
 

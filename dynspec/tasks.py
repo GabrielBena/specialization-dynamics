@@ -3,6 +3,32 @@ from copy import deepcopy
 
 
 def get_single_task(task, target, n_classes=None):
+    """
+    Returns a single task based on the given task name and target.
+
+    Args:
+        task (str): Name of the task to perform.
+        target (torch.Tensor): Target tensor.
+        n_classes (int, optional): Number of classes. Defaults to None.
+
+    Returns:
+        torch.Tensor: Single task tensor.
+
+    Possible tasks:
+        - "inv" : flip target digits
+        - "none, "both", "all" : do nothing
+        - "parity-digits" : flip digits based on parity
+        - "parity-digits-both" : double target : flip digits based on parity and 1-parity
+        - "parity-digits-sum" : return parity of sum of digits
+        - "max" : return max of digits
+        - "min" : return min of digits
+        - "opposite" : return n_classes - target - 1
+        - "sum" : return sum of digits
+        - "bitand" : return bitwise and of digits
+        - "bitor" : return bitwise or of digits
+        - "bitxor-last-N" : return bitwise xor of digits, keeping only last N bits
+        - "bitxor-first-N" : return bitwise xor of digits, keeping only first N bits
+    """
     if n_classes is None:
         n_classes = len(target[:, 0].unique())
 
@@ -28,17 +54,8 @@ def get_single_task(task, target, n_classes=None):
                     torch.where(parity.bool(), digits[0], digits[1]),
                     torch.where(parity.bool(), digits[1], digits[0]),
                 ]
-            elif "equal" in task:
-                tgt = torch.where(parity.bool(), digits[0], digits[1])
-                tgt[
-                    (digits[0] == digits[1])
-                    | (digits[0] == (digits[1] - 1) % n_classes)
-                ] = (n_classes + 1)
-                return tgt
             elif "sum" in task:
                 return parity
-            elif "inv" in task:
-                return torch.where(parity.bool(), digits[1], digits[0])
             else:
                 return torch.where(parity.bool(), digits[0], digits[1])
 
@@ -86,11 +103,15 @@ def get_single_task(task, target, n_classes=None):
 
 def get_task_target(target, task, n_classes):
     """
-    Returns target for different possible tasks
-    Args :
-        targets : original digits : size (batch x 2)
-        task : task to be conducted :
-               digit number ("0", "1"), "parity", "parity_digits_10", "parity_digits_100" or "sum" ...
+    Returns the target tensor for a given task.
+
+    Args:
+        target (torch.Tensor): The original target tensor.
+        task (str or list): The task(s) to perform on the target tensor.
+        n_classes (int): The number of classes in the target tensor.
+
+    Returns:
+        torch.Tensor: The target tensor after performing the specified task(s).
     """
 
     if type(task) is list:
@@ -118,6 +139,15 @@ def get_task_target(target, task, n_classes):
 
 
 def dec2bin(x):
+    """
+    Converts a decimal number to its binary representation.
+
+    Args:
+        x (torch.Tensor): The decimal number to convert.
+
+    Returns:
+        torch.Tensor: The binary representation of the input decimal number.
+    """
     bits = int((torch.floor(torch.log2(x)) + 1).max())
     # mask = 2 ** torch.arange(bits).to(x.device, x.dtype)
     mask = 2 ** torch.arange(bits - 1, -1, -1).to(x.device, x.dtype)
@@ -125,5 +155,15 @@ def dec2bin(x):
 
 
 def bin2dec(b, bits):
+    """
+    Converts a binary tensor to a decimal tensor.
+
+    Args:
+        b (torch.Tensor): The binary tensor to convert.
+        bits (int): The number of bits in the binary tensor.
+
+    Returns:
+        torch.Tensor: The decimal tensor.
+    """
     mask = 2 ** torch.arange(bits - 1, -1, -1).to(b.device, b.dtype)
     return torch.sum(mask * b, -1)

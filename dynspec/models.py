@@ -275,10 +275,41 @@ class Readout(nn.Module):
 
 class Community(nn.Module):
     """
-    Main model of the work, community of modules with recurrent dense connections inside modules and sparse connections between modules
+    A PyTorch module representing a community of neural network modules.
 
     Args:
-        config (dict): configuration of the model
+        config (dict): A dictionary containing the configuration parameters for the community.
+            The dictionary should have the following keys:
+                - "input": A dictionary containing the input configuration parameters. It should have the following keys:
+                    - "input_size" (int): The size of the input.
+                    - "common_input" (bool): Whether the input is shared across all modules.
+                - "modules": A dictionary containing the module configuration parameters. It should have the following keys:
+                    - "n_modules" (int): The number of modules in the community.
+                    - "hidden_size" (int): The number of features in the hidden state of each module.
+                    - "n_layers" (int): The number of layers in each module.
+                    - "dropout" (float): The dropout probability.
+                    - "cell_type" (str): The type of reccurent cell to use (RNN or GRU).
+                - "connections": A dictionary containing the connection configuration parameters. It should have the following keys:
+                    - "sparsity" (float): The sparsity of the connection matrix.
+                - "readout": A dictionary containing the readout configuration parameters. It should have the following keys:
+                    - "output_size" (int or list of ints): The size of the output(s).
+                    - "common_readout" (bool): Whether the readout is shared across all modules.
+                    - "n_hid" (int or None): The number of hidden units in the readout layer(s).
+
+    Attributes:
+        input_size (int): The size of the input.
+        common_input (bool): Whether the input is shared across all modules.
+        n_modules (int): The number of modules in the community.
+        hidden_size (int): The number of features in the hidden state of each module.
+        n_layers (int): The number of layers in each module.
+        dropout (float): The dropout probability.
+        cell_type (str): The type of RNN cell to use.
+        sparsity (float): The sparsity of the connection matrix.
+        output_size (int or list of ints): The size of the output(s).
+        common_readout (bool): Whether the readout is shared across all modules.
+        masks (dict): A dictionary containing the masks used for computing the forward pass.
+        core (nn.Module): The core RNN module.
+        readout (Readout): The readout module.
     """
 
     def __init__(
@@ -294,7 +325,6 @@ class Community(nn.Module):
             self.readout_config,
         ) = [config[k] for k in ["input", "modules", "connections", "readout"]]
 
-        self.is_community = True
         self.input_size, self.common_input = [
             self.input_config[k] for k in ["input_size", "common_input"]
         ]
@@ -394,13 +424,15 @@ class Community(nn.Module):
 
 def init_model(config, device=torch.device("cpu")):
     """
-    Initialize a model and optimizer from a configuration dict.
+    Initializes a model and optimizer based on the given configuration.
 
     Args:
-        config (dict): Configuration dictionary.
-        device (torch.device, optional): cpu or gpu. Defaults to torch.device("cpu").
-    """
+        config (dict): A dictionary containing the configuration for the model.
+        device (torch.device): The device to use for the model (default is CPU).
 
+    Returns:
+        tuple: A tuple containing the initialized model and optimizer.
+    """
     n_outs = {
         "none": [10, 10],
         "parity-digits": 10,
@@ -441,55 +473,3 @@ def init_model(config, device=torch.device("cpu")):
     model = Community(config).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), **config["optim"])
     return model, optimizer
-
-
-if __name__ == "__main__":
-    task = ["parity-digits", "inv-parity-digits"]
-
-    modules_config = {
-        "n_modules": 2,
-        "hidden_size": 25,  # will be changed later
-        "n_layers": 1,
-        "dropout": 0.0,
-        "cell_type": str(nn.RNN),
-    }
-
-    connections_config = {"sparsity": 0.1}  # Will be changed later
-
-    n_outs = {
-        "none": [10, 10],
-        "parity-digits": 10,
-        "inv-parity-digits": 10,
-        "parity-digits-both": [10, 10],
-        "parity-digits-sum": 2,
-        "sum": 20,
-        "bitxor": 16,
-        "bitxor-last-1": 2,
-        "1": 10,
-        "0": 10,
-        "inv": 10,
-    }
-
-    input_config = {"input_size": 784, "common_input": False}
-    optim_config = {"lr": 1e-3, "weight_decay": 1e-5}
-
-    readout_config = {"common_readout": False, "n_hid": 5}
-
-    decision = ["last", "max"]
-
-    training_config = {"n_epochs": 30, "task": task, "check_grad": False}
-
-    default_config = {
-        "modules": modules_config,
-        "connections": connections_config,
-        "input": input_config,
-        "readout": readout_config,
-        "data": None,
-        "decision": decision,
-        "training": training_config,
-        "optim": optim_config,
-    }
-
-    model, optimizer = init_model(default_config)
-    model(input=torch.randn(5, 128, 1568))
-    print(model)

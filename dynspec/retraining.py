@@ -17,6 +17,15 @@ global_diff_metric = (
 
 
 def reccursive_stack(input):
+    """
+    Recursively stacks a list of PyTorch tensors into a single tensor.
+
+    Args:
+        input (list): A list of PyTorch tensors.
+
+    Returns:
+        torch.Tensor: A stacked PyTorch tensor.
+    """
     try:
         return torch.stack(input)
     except TypeError:
@@ -49,6 +58,19 @@ def create_retraining_model(
     config,
     device=torch.device("cuda") if torch.cuda.is_available() else "cpu",
 ):
+    """
+    Creates a new model for retraining based on the original model and configuration.
+
+    Args:
+        original_model (nn.Module): The original model to be retrained.
+        config (dict): The configuration dictionary of the original model
+        device (torch.device, optional): The device to use for the new model. Defaults to "cuda" if available, else "cpu".
+
+    Returns:
+        nn.Module: The new model for retraining.
+        dict: The configuration dictionary for the new model.
+    """
+
     state_dict_copy = original_model.state_dict().copy()
     model, _ = init_model(config, device=device)
     model.load_state_dict(state_dict_copy)
@@ -115,6 +137,20 @@ def compute_retraining_metric(
     use_tqdm=False,
     **kwargs,
 ):
+    """
+    Computes the retraining metric for a given original model, configuration, and data loaders.
+
+    Args:
+        original_model (nn.Module): The original model to be retrained.
+        config (dict): The configuration dictionary.
+        loaders (dict): The data loaders.
+        device (torch.device, optional): The device to use for computation. Defaults to "cuda" if available, else "cpu".
+        use_tqdm (bool, optional): Whether to use tqdm for progress bars. Defaults to False.
+        **kwargs: Additional keyword arguments to be passed to the train_community function.
+
+    Returns:
+        tuple: A tuple containing the retraining results, the retrained model, and the retraining configuration.
+    """
     nb_steps = config["data"]["nb_steps"]
     n_modules = config["modules"]["n_modules"]
     n_targets = 2
@@ -151,7 +187,26 @@ def compute_retraining_metric(
     return retraining_results, model, retraining_config
 
 
-def compute_ablations_metric(retrained_model, config, loaders, device):
+def compute_ablations_metric(
+    retrained_model,
+    config,
+    loaders,
+    device=torch.device("cuda") if torch.cuda.is_available() else "cpu",
+):
+    """
+    Computes the ablations metric for a retrained model.
+
+    Args:
+        retrained_model (nn.Module): The retrained model to compute the ablations metric for.
+        config (dict): The configuration dictionary for the model.
+        loaders (list): data loaders.
+        device (torch.device, optional): The device to use for computation. Defaults to "cuda" if available, else "cpu".
+
+    Returns:
+        tuple: A tuple containing the ablations results, the model, and the ablations configuration.
+    """
+    # function code here
+
     model = copy.deepcopy(retrained_model)
     model.readout.layers = nn.ModuleList(
         [
@@ -176,7 +231,19 @@ def compute_ablations_metric(retrained_model, config, loaders, device):
     return ablations_results, model, ablations_config
 
 
-def compute_random_timing_metric(model, loaders, config, device):
+def compute_random_timing_dynamics(model, loaders, config, device):
+    """
+    Computes random timing dynamics for a given model and dataset.
+
+    Args:
+        model (nn.Module): The neural network model to evaluate.
+        loaders (tuple): A tuple of PyTorch DataLoader objects for the train and test sets.
+        config (dict): A dictionary containing the configuration parameters for the experiment.
+        device (str): The device to use for computations (e.g. "cpu" or "cuda").
+
+    Returns:
+        A dictionary containing the random timing dynamics.
+    """
     random_config = config.copy()
     random_config["data"]["random_start"] = True
 
@@ -225,86 +292,3 @@ def compute_random_timing_metric(model, loaders, config, device):
         "all_targets": all_targets,
         "all_start_times": all_start_times,
     }
-
-
-if __name__ == "__main__":
-    task = ["parity-digits", "inv-parity-digits"]
-
-    modules_config = {
-        "n_modules": 2,
-        "hidden_size": 10,  # will be changed later
-        "n_layers": 1,
-        "dropout": 0.0,
-        "cell_type": str(nn.RNN),
-    }
-
-    connections_config = {"sparsity": 1}  # Will be changed later
-
-    n_outs = {
-        "none": [10, 10],
-        "parity-digits": 10,
-        "inv-parity-digits": 10,
-        "parity-digits-both": [10, 10],
-        "parity-digits-sum": 2,
-        "sum": 20,
-        "bitxor": 16,
-        "bitxor-last-1": 2,
-        "1": 10,
-        "0": 10,
-        "inv": 10,
-    }
-
-    input_config = {"input_size": 784, "common_input": False}
-    optim_config = {"lr": 1e-3, "weight_decay": 1e-5}
-
-    readout_config = {"common_readout": False, "n_hid": 5}
-
-    decision = ["last", "max"]
-
-    training_config = {"n_epochs": 30, "task": task, "check_grad": False}
-
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    n_modules = 2
-    n_classes_per_digit = 10
-    n_classes = n_classes_per_digit * n_modules
-    nb_steps = 5
-
-    data_config = {
-        # ------ Change if needed------
-        "batch_size": 256,
-        "input_size": 28,
-        "use_cuda": use_cuda,
-        "data_type": "double_digits",
-        "n_digits": n_modules,
-        "n_classes": n_classes,
-        "n_classes_per_digit": n_classes_per_digit,
-        "nb_steps": nb_steps,
-        # cov ratio : controls the probabilty of seeing D1 == D2, default = 1 (chance probability)
-        "cov_ratio": 1,
-        # noise ratio : controls the ammount of noise added to the input , default = 0.5
-        "noise_ratio": 0.4,
-        # random start : add stochasticity by having input start at random times from pure noise, default = False
-        "random_start": False,
-        # --------------------------
-    }
-    all_data = get_datasets("../data/", data_config)
-    datasets, loaders = all_data[data_config["data_type"]]
-    len(datasets[0])
-
-    default_config = {
-        "modules": modules_config,
-        "connections": connections_config,
-        "input": input_config,
-        "readout": readout_config,
-        "data": data_config,
-        "decision": decision,
-        "training": training_config,
-        "optim": optim_config,
-    }
-
-    model, optimizer = init_model(default_config)
-    model(input=torch.randn(5, 128, 1568))
-    print(model)
-
-    compute_retraining_metric(model, default_config, loaders, use_tqdm=True)

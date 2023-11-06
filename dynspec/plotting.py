@@ -9,12 +9,32 @@ import warnings
 
 
 def set_style():
+    """
+    Sets the plotting style using a style sheet file located in the same directory as this script.
+    """
     file_path = os.path.realpath(__file__)
     file_path = file_path.replace("plotting.py", "style_sheet.mplstyle")
     plt.style.use(file_path)
 
 
 def single_filter(data, key, value):
+    """
+    Filter a pandas DataFrame based on a single key-value pair.
+
+    Parameters:
+    -----------
+    data : pandas.DataFrame
+        The DataFrame to filter.
+    key : str
+        The column name to filter on. If the key starts with "!", the filter will exclude rows where the column value matches `value`.
+    value : any
+        The value to filter on. If None, the filter will return rows where the column value is null.
+
+    Returns:
+    --------
+    pandas.Series
+        A boolean Series indicating which rows of `data` pass the filter.
+    """
     if key[0] == "!":
         if value is None:
             return ~data[key[1:]].isnull()
@@ -27,7 +47,17 @@ def single_filter(data, key, value):
             return data[key] == value
 
 
-def filter_data(data, v_params):
+def filter_data(data: pd.DataFrame, v_params: dict) -> tuple:
+    """
+    Filters the input data based on the given parameters.
+
+    Args:
+        data (pd.DataFrame): The input data to be filtered.
+        v_params (dict): A dictionary of filter parameters.
+
+    Returns:
+        tuple: A tuple containing the filtered data and a boolean mask indicating which rows were filtered out.
+    """
     data = data.copy()
     filters = []
     for key, value in v_params.items():
@@ -47,6 +77,13 @@ def filter_data(data, v_params):
 
 
 def plot_model_masks(experiment, plot_input=False):
+    """
+    Plots the recurrent and connections masks for each model in the given experiment.
+
+    Args:
+        experiment (Experiment): The experiment object containing the models to plot.
+        plot_input (bool, optional): Whether to plot the input masks as well. Defaults to False.
+    """
     n1, n2 = int(np.sqrt(len(experiment.all_configs))), int(
         np.ceil(np.sqrt(len(experiment.all_configs)))
     )
@@ -101,11 +138,18 @@ def plot_model_masks(experiment, plot_input=False):
             )
 
 
-def plot_accs(general_training_results):
+def plot_accs(experiment):
+    """
+    Plots the test accuracies for all training runs in the given experiment.
+
+    Args:
+        experiment: An instance of the Experiment class.
+    """
+
     set_style()
     train_results, all_varying_params = (
-        general_training_results["train_results"],
-        general_training_results["varying_params"],
+        experiment.results["train_results"],
+        experiment.results["varying_params"],
     )
     n1, n2 = int(np.sqrt(len(train_results))), int(np.ceil(np.sqrt(len(train_results))))
 
@@ -132,6 +176,15 @@ def plot_accs(general_training_results):
 
 
 def plot_metric_results(experiment):
+    """
+    Plots the metric results of an experiment.
+
+    Args:
+    - experiment: an Experiment object containing the results to plot.
+
+    Returns:
+    - metric_global_data: a pandas DataFrame containing the metric data.
+    """
     set_style()
     warnings.filterwarnings("ignore")
     metric_global_data = {"step": []}
@@ -271,6 +324,16 @@ def plot_metric_results(experiment):
 
 
 def plot_random_timings(experiment):
+    """
+    Plots the local metric for each module in the experiment, as a function of time step, for different sparsity levels.
+    The function returns a pandas DataFrame containing the data used for the plot.
+
+    Args:
+        experiment: An instance of the Experiment class containing the results to be plotted.
+
+    Returns:
+        A pandas DataFrame containing the data used for the plot.
+    """
     plot_data = {
         "t0": [],
         "t1": [],

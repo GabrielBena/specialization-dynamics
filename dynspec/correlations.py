@@ -8,17 +8,34 @@ from dynspec.training import is_notebook
 
 
 def fixed_information_data(
-    data, target, fixed, fixed_mode="label", permute_other=True, n_agents=2
+    data, target, fixed, fixed_mode="label", permute_other=True, n_modules=2
 ):
+    """
+    Create a modified version of the data, to be used for correlation metric.
+    One of the quality is fixed (digit label, or parity, etc), for on of the input digit
+
+    Args:
+        data (torch.tensor): input data
+        target (torch.tensor): input labels
+        fixed (int): digit to be fixed
+        fixed_mode (str, optional): quality to fix. Defaults to "label".
+        permute_other (bool, optional): apply random permutation to the other (non-fixed) digit. Defaults to True.
+        n_modules (int, optional): number of modules. Defaults to 2.
+
+    Raises:
+        NotImplementedError: fixed_mode not recognized
+
+    Returns:
+        new_data: list of modified data, with each presenting a fixed quality (size : n_quality x n_timestep x n_batch x n_features)
+    """
+
     data = data.clone()
-    # Return a modified version of data sample, where one quality is fixed (digit label, or parity, etc)
     digits = torch.split(target, 1, dim=-1)
     bs = digits[0].shape[0]
 
     classes = [d.unique() for d in digits]
 
     if len(data.shape) == 3:
-        # data = torch.stack([data for _ in range(n_agents)], 1)
         data = torch.stack(data.split(data.shape[-1] // 2, dim=-1), 1)
         reshape = True
     else:
@@ -41,13 +58,6 @@ def fixed_information_data(
     if reshape:
         new_data = [d.transpose(1, -2).flatten(start_dim=-2) for d in new_data]
 
-    """
-    if 0 in [d.shape[2] for d in new_data]:
-        return fixed_information_data(
-            data, target, fixed, fixed_mode, permute_other, n_agents
-        )
-    """
-
     return new_data
 
 
@@ -55,6 +65,16 @@ v_pearsonr = np.vectorize(pearsonr, signature="(n1),(n2)->(),()")
 
 
 def randperm_no_fixed(n):
+    """
+    Generates a random permutation of integers from 0 to n-1, such that no integer is fixed in place.
+
+    Args:
+        n (int): The number of integers to permute.
+
+    Returns:
+        torch.Tensor: A 1-D tensor of size n containing the randomly permuted integers.
+    """
+
     perm = torch.randperm(n)
 
     if (torch.arange(n) == perm).any() and n > 4:
@@ -64,6 +84,16 @@ def randperm_no_fixed(n):
 
 
 def get_correlation(model, data):
+    """
+    Compute the self-correlation between of module's hidden states
+
+    Args:
+        model (nn.Module): modular network
+        data (torch.tensor): data to be processed by the network
+
+    Returns:
+        np.array: correlation between hidden states (size : n_timestep x n_modules x n_batch)
+    """
     states = model(data)[1]
 
     agent_states = states.split(model.hidden_size, -1)
@@ -82,6 +112,22 @@ def compute_correlation_metric(
     use_tqdm=True,
     pbar=None,
 ):
+    """
+    Computes the correlation metric for a given model and data loader.
+
+    Args:
+        model (nn.Module): The PyTorch model to evaluate.
+        loader (DataLoader): The data loader to use for evaluation.
+        config (dict): A dictionary containing the configuration parameters.
+        device (torch.device, optional): The device to use for computation. Defaults to "cuda" if available, else "cpu".
+        n_samples (int, optional): The number of samples to use for evaluation. Defaults to 10.
+        use_tqdm (bool, optional): Whether to use tqdm for progress tracking. Defaults to True.
+        pbar (tqdm.tqdm, optional): An existing tqdm progress bar to use for tracking progress. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the correlations, base correlations, and normalized correlations.
+    """
+
     correlations = [[] for _ in range(2)]
     base_correlations = []
     descs = ["", ""]
@@ -109,9 +155,9 @@ def compute_correlation_metric(
             if use_tqdm:
                 pbar.set_description(descs[0] + descs[1])
 
-    # n_timestep x n_agents x n_batch
+    # n_timestep x n_modules x n_batch
     base_correlations = np.stack(base_correlations, -1).mean(-1)
-    # n_timestep x n_agents x n_targets x n_tests
+    # n_timestep x n_modules x n_targets x n_tests
     correlations = np.stack([np.stack(corrs, -1) for corrs in correlations], 2).mean(-1)
     norm_correlations = (correlations - base_correlations[..., None]) / (
         1 - base_correlations[..., None]

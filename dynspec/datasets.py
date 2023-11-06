@@ -13,6 +13,16 @@ Custom Datasets
 
 
 def data_transform(img, transform):
+    """
+    Applies the given transform to the input image.
+
+    Args:
+        img (numpy.ndarray): The input image.
+        transform (callable or None): The transform to apply to the image.
+
+    Returns:
+        The transformed image.
+    """
     if transform is not None:
         img = Image.fromarray(img, mode="L")
         img = transform(img)
@@ -20,12 +30,35 @@ def data_transform(img, transform):
 
 
 def target_transform(target, transform):
+    """
+    Applies a transformation function to the target tensor, if provided.
+
+    Args:
+        target (torch.Tensor): The target tensor to be transformed.
+        transform (callable): The transformation function to be applied to the target tensor.
+
+    Returns:
+        torch.Tensor: The transformed target tensor.
+    """
     if transform is not None:
         target = torch.tensor(transform(target))
     return target
 
 
 class Custom_MNIST(MNIST):
+    """
+    Initializes a new custom MNIST dataset.
+
+    Args:
+        root (str): The root directory of the dataset.
+        train (bool, optional): Whether to load the training or test split. Defaults to True.
+        transform (Callable, optional): A function/transform that takes in a sample and returns a transformed version. Defaults to None.
+        target_transform (Callable, optional): A function/transform that takes in the target and transforms it. Defaults to None.
+        download (bool, optional): Whether to download the dataset if it is not already present. Defaults to False.
+        truncate (list or int, optional): If not None, truncates the dataset to the specified number of classes. Defaults to None.
+        pre_transform (bool, optional): Whether to apply the dataset's pre-processing transform. Defaults to True.
+    """
+
     def __init__(
         self,
         root: str,
@@ -93,6 +126,18 @@ class Custom_MNIST(MNIST):
 
 
 class Custom_EMNIST(EMNIST):
+    """
+    Initializes a new custom EMNIST dataset.
+
+    Args:
+        root (str): The root directory of the dataset.
+        train (bool, optional): Whether to load the training or test split. Defaults to True.
+        transform (Callable, optional): A function/transform that takes in a sample and returns a transformed version. Defaults to None.
+        target_transform (Callable, optional): A function/transform that takes in the target and transforms it. Defaults to None.
+        download (bool, optional): Whether to download the dataset if it is not already present. Defaults to False.
+        truncate (list or int, optional): If not None, truncates the dataset to the specified number of classes. Defaults to None.
+    """
+
     def __init__(
         self,
         root: str,
@@ -439,41 +484,3 @@ def get_datasets(root, data_config):
             loaders,
         )
     }
-
-
-if __name__ == "__main__":
-    n_modules = 2
-    n_classes_per_digit = 10
-    n_classes = n_classes_per_digit * n_modules
-    nb_steps = 5
-
-    data_config = {
-        # ------ Change if needed------
-        "batch_size": 512,
-        "input_size": 28,
-        "use_cuda": torch.cuda.is_available(),
-        "data_type": "double_digits",
-        "n_digits": n_modules,
-        "n_classes": n_classes,
-        "n_classes_per_digit": n_classes_per_digit,
-        "nb_steps": nb_steps,
-        "cov_ratio": 1,
-        "noise_ratio": 0.5,
-        "random_start": False,
-        # ------ Leave as is -------
-        "data_size": None,
-        "fix_asym": True,
-        "permute_dataset": True,
-        "split_classes": True,
-        "seed": np.random.randint(100),
-        # --------------------------
-    }
-
-    from cProfile import Profile
-    from pstats import SortKey, Stats
-
-    filedir = os.path.dirname(os.path.abspath(__file__))
-    with Profile() as profile:
-        all_data = get_datasets(f"{filedir}/../data/", data_config)
-
-    profile.print_stats(sort=SortKey.CUMULATIVE)

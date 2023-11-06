@@ -11,6 +11,14 @@ from dynspec.tasks import get_task_target
 
 
 def is_notebook():
+    """
+    Check if the code is running in a Jupyter notebook or not.
+
+    Returns:
+    -------
+    bool
+        True if running in a notebook, False otherwise.
+    """
     try:
         get_ipython()
         notebook = True
@@ -19,14 +27,16 @@ def is_notebook():
     return notebook
 
 
-def reccursive_stack(input):
-    try:
-        return torch.stack(input)
-    except TypeError:
-        return torch.stack([reccursive_stack(i) for i in input])
-
-
 def nested_round(acc):
+    """
+    Rounds the given accuracy value(s) to the nearest integer percentage value(s).
+
+    Args:
+        acc (float or list): The accuracy value(s) to be rounded.
+
+    Returns:
+        float or list: The rounded accuracy value(s).
+    """
     try:
         round = np.round(np.array(acc) * 100, 0).astype(float)
         if isinstance(round, np.ndarray):
@@ -37,6 +47,15 @@ def nested_round(acc):
 
 
 def nested_mean(losses):
+    """
+    Computes the mean of a list of losses, which may be nested.
+
+    Args:
+        losses (list): A list of losses, which may be nested.
+
+    Returns:
+        torch.Tensor: The mean of the losses.
+    """
     try:
         return torch.mean(losses)
     except TypeError:
@@ -44,6 +63,17 @@ def nested_mean(losses):
 
 
 def get_loss(output, t_target, use_both=False):
+    """
+    Computes the loss between the predicted output and the target output.
+
+    Args:
+        output (torch.Tensor or list of torch.Tensor): The predicted output(s) of the model.
+        t_target (torch.Tensor or list of torch.Tensor): The target output(s) for the model.
+        use_both (bool, optional): Wether a single output is used for all tasks.
+
+    Returns:
+        torch.Tensor or list of torch.Tensor: The computed loss(es) between the predicted output and the target output.
+    """
     if use_both:
         loss = [get_loss(o, t_target) for o in output]
     else:
@@ -63,6 +93,20 @@ def get_loss(output, t_target, use_both=False):
 
 
 def get_acc(output, t_target, use_both=False):
+    """
+    Computes the accuracy of the model's predictions given the target tensor.
+
+    Args:
+        output (torch.Tensor or list of torch.Tensor): The model's output tensor(s).
+        t_target (torch.Tensor or list of torch.Tensor): The target tensor(s).
+        use_both (bool, optional): Wether a single output is used for all tasks. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - acc (numpy.ndarray): The accuracy of the model's predictions.
+            - correct (numpy.ndarray): A boolean array indicating whether each prediction was correct.
+    """
+
     if use_both:
         all = [get_acc(o, t_target) for o in output]
         acc, correct = [a[0] for a in all], [a[1] for a in all]
@@ -83,6 +127,12 @@ def get_acc(output, t_target, use_both=False):
 
 
 def check_grad(model):
+    """
+    Checks if gradients are None or all zeros for each parameter in the given model.
+
+    Args:
+        model: A PyTorch model.
+    """
     for n, p in model.named_parameters():
         if p.requires_grad:
             if p.grad is None:
@@ -107,6 +157,27 @@ def train_community(
     device="cuda",
     pbar=None,
 ):
+    """
+    Trains a community of models using the given model, optimizer, and data loaders.
+
+    Args:
+        model (torch.nn.Module): The model to be trained.
+        optimizer (torch.optim.Optimizer): The optimizer to be used for training.
+        config (dict): The configuration dictionary containing the training parameters.
+        loaders (tuple): A tuple of train and test data loaders.
+        schedulers (list, optional): A list of learning rate schedulers. Defaults to None.
+        n_epochs (int, optional): The number of epochs to train for. Defaults to None.
+        use_tqdm (bool, optional): Whether to use tqdm progress bars. Defaults to True.
+        trials (tuple, optional): A tuple of booleans indicating whether to train and test. Defaults to (True, True).
+        show_all_acc (bool or int, optional): Whether to show all accuracies or only a average one. Defaults to False.
+        stop_acc (float or list, optional): The accuracy threshold to stop training. Defaults to None.
+        device (str, optional): The device to use for training. Defaults to "cuda".
+        pbar (tqdm.tqdm, optional): A tqdm progress bar. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the training and testing results.
+    """
+
     n_epochs = config["training"]["n_epochs"] if n_epochs is None else n_epochs
     task = config["training"]["task"]
     if task == "parity-digits-both":
@@ -256,6 +327,23 @@ def train_community(
 
 
 def test_community(model, device, test_loader, config, show_all_acc=False):
+    """
+    Test the given model on the test data and return the test results.
+
+    Args:
+        model (torch.nn.Module): The model to be tested.
+        device (torch.device): The device on which the model is loaded.
+        test_loader (torch.utils.data.DataLoader): The data loader for the test data.
+        config (dict): The configuration dictionary.
+        show_all_acc (bool or int, optional): Whether to show the accuracy for each task separately.
+            If True, show accuracy for all tasks. If False, show overall accuracy.
+            If an integer is provided, show accuracy for the corresponding task. Default is False.
+
+    Returns:
+        dict: A dictionary containing the test results, including the tqdm description, test loss, test accuracy,
+        deciding modules, and accuracies over all samples.
+    """
+
     model.eval()
     test_loss = 0
     test_accs = []
