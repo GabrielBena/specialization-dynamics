@@ -118,7 +118,7 @@ class Experiment(object):
                 (str(saving_config) + str(self.varying_params)).encode("utf-8")
             ).hexdigest()
 
-        self.result_path = f"../results/pre-loaded-examples/{v_hash}"
+        self.result_path = f"results/pre-loaded-examples/{v_hash}"
         print(self.result_path)
         try:
             results = pd.read_pickle(self.result_path)
@@ -147,7 +147,7 @@ class Experiment(object):
                 (str(saving_config) + str(self.varying_params)).encode("utf-8")
             ).hexdigest()
 
-        self.result_path = f"../results/pre-loaded-examples/{v_hash}"
+        self.result_path = f"results/pre-loaded-examples/{v_hash}"
         print(self.result_path)
 
         self.results.to_pickle(self.result_path)
