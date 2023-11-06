@@ -386,10 +386,10 @@ class Community(nn.Module):
                 outputs.append(states)
             outputs = torch.stack(outputs)
         else:
-            outputs, states = self.core(input)
+            all_states, final_states = self.core(input)
 
-        outputs = self.readout(outputs)
-        return outputs, states
+        outputs = self.readout(all_states)
+        return outputs, all_states
 
 
 def init_model(config, device=torch.device("cpu")):
@@ -414,6 +414,8 @@ def init_model(config, device=torch.device("cpu")):
         "0": 10,
         "inv": 10,
     }
+    if config["training"]["task"] == "parity-digits-both":
+        config["training"]["task"] = ["parity-digits", "inv-parity-digits"]
 
     def get_readout_dimensions(task, n_hid=None):
         """

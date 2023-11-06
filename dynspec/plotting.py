@@ -2,9 +2,10 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from dynspec.metrics import global_diff_metric, diff_metric
+from dynspec.retraining import global_diff_metric, diff_metric, metric_norm_acc
 import pandas as pd
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
+import warnings
 
 
 def set_style():
@@ -53,14 +54,14 @@ def plot_model_masks(experiment, plot_input=False):
         n2 += 1
 
     fig = plt.figure(
-        figsize=(n2 * 3, n1 * 3 * (1 + plot_input * 0.3)), constrained_layout=True
+        figsize=(n2 * 2, n1 * 2 * (1 + plot_input * 0.3)), constrained_layout=True
     )
 
     subfigs = fig.subfigures(1 + plot_input, height_ratios=[1, 0.3][: (1 + plot_input)])
     if not plot_input:
         subfigs = np.array([subfigs])
 
-    subfigs[0].suptitle("Recurrent and Connection Masks")
+    subfigs[0].suptitle("Recurrent + Connections Masks")
     axs = subfigs[0].subplots(n1, n2)
     if len(experiment.models) == 1:
         axs = np.array([axs]).T
@@ -130,49 +131,143 @@ def plot_accs(general_training_results):
         ax.set_title(vp_legend)
 
 
-def plot_retraining_results(experiment):
+def plot_metric_results(experiment):
     set_style()
-    retrain_global_data = {k: [] for k in ["metric", "step"]}
-    for r_accs, vp in zip(
-        experiment.results["retrain_accs"], experiment.all_varying_params
-    ):
-        retrain_global_data["metric"].extend(global_diff_metric(r) for r in r_accs)
-        for k, v in vp.items():
-            retrain_global_data.setdefault(k, [])
-            retrain_global_data[k].extend([v] * len(r_accs))
+    warnings.filterwarnings("ignore")
+    metric_global_data = {"step": []}
+    if "retrain_accs" in experiment.results.columns:
+        for r_accs, vp in zip(
+            experiment.results["retrain_accs"], experiment.all_varying_params
+        ):
+            metric_global_data.setdefault("metric", [])
+            metric_global_data.setdefault("metric_name", [])
+            metric_global_data["metric"].extend(
+                global_diff_metric(metric_norm_acc(r)) for r in r_accs
+            )
+            metric_global_data["metric_name"].extend(["retraining"] * len(r_accs))
+            for k, v in vp.items():
+                metric_global_data.setdefault(k, [])
+                metric_global_data[k].extend([v] * len(r_accs))
 
-        retrain_global_data["step"].extend(range(len(r_accs)))
+            metric_global_data["step"].extend(range(len(r_accs)))
 
-    retrain_global_data = pd.DataFrame(retrain_global_data)
-    retrain_global_data["sparsity_"] = retrain_global_data.apply(
+    if "correlations" in experiment.results.columns:
+        for correlations, vp in zip(
+            experiment.results["correlations"], experiment.all_varying_params
+        ):
+            norm_correlations = correlations["norm_correlations"]
+            metric_global_data.setdefault("metric", [])
+            metric_global_data.setdefault("metric_name", [])
+            metric_global_data["metric"].extend(
+                global_diff_metric(c) for c in norm_correlations
+            )
+            metric_global_data["metric_name"].extend(
+                ["correlation"] * len(norm_correlations)
+            )
+            for k, v in vp.items():
+                metric_global_data.setdefault(k, [])
+                metric_global_data[k].extend([v] * len(norm_correlations))
+            metric_global_data["step"].extend(range(len(norm_correlations)))
+
+    if "ablations" in experiment.results.columns:
+        for ablations, vp in zip(
+            experiment.results["ablations"], experiment.all_varying_params
+        ):
+            ablations_accs = ablations["ablations_accs"]
+            metric_global_data.setdefault("metric", [])
+            metric_global_data.setdefault("metric_name", [])
+            metric_global_data["metric"].extend(
+                global_diff_metric(metric_norm_acc(a)) for a in ablations_accs
+            )
+            metric_global_data["metric_name"].extend(
+                ["ablations"] * len(ablations_accs)
+            )
+            for k, v in vp.items():
+                metric_global_data.setdefault(k, [])
+                metric_global_data[k].extend([v] * len(ablations_accs))
+            metric_global_data["step"].extend(range(len(ablations_accs)))
+
+    metric_global_data = pd.DataFrame(metric_global_data)
+    metric_global_data["sparsity_"] = metric_global_data.apply(
         lambda x: x.sparsity if x.sparsity > 0 else 1 / x.hidden_size**2, axis=1
     )
-    retrain_global_data["q_metric"] = retrain_global_data["sparsity_"].apply(
+    metric_global_data["q_metric"] = metric_global_data["sparsity_"].apply(
         lambda x: 0.5 * (1 - x) / (1 + x)
     )
 
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
-    for x, x_label, ax in zip(
-        ["sparsity_", "q_metric"],
-        ["Sparsity (p) of interconnections", "Structural Q Metric of the model"],
-        axs,
-    ):
-        sns.lineplot(
-            data=filter_data(
-                retrain_global_data,
-                {"step": experiment.default_config["data"]["nb_steps"] - 1},
-            )[0],
-            x=x,
-            y="metric",
-            palette="viridis",
-            hue="hidden_size",
-            ax=ax,
-        )
-        if x == "sparsity_":
-            ax.set_xscale("log")
-        # plt.yscale("log")
-        ax.set_xlabel(x_label)
-        ax.set_ylabel("Model Specialization")
+    metrics = metric_global_data["metric_name"].unique()
+    fig, axs = plt.subplots(
+        2,
+        len(metrics),
+        figsize=(4 * len(metrics), 6),
+        # sharey=True,
+        constrained_layout=True,
+    )
+
+    norm = Normalize(
+        vmin=metric_global_data["hidden_size"].min(),
+        vmax=metric_global_data["hidden_size"].max(),
+    )
+    colors = sns.palettes.color_palette("viridis", len(metrics))
+    for m, (metric, axs_m) in enumerate(zip(metrics, axs.T)):
+        for j, (x, x_label, ax) in enumerate(
+            zip(
+                ["sparsity_", "q_metric"],
+                [
+                    "Sparsity (p) of interconnections",
+                    "Structural Q Metric of the model",
+                ],
+                axs_m,
+            )
+        ):
+            ln = sns.lineplot(
+                data=filter_data(
+                    metric_global_data,
+                    {
+                        "step": experiment.default_config["data"]["nb_steps"] - 1,
+                        "metric_name": metric,
+                    },
+                )[0],
+                x=x,
+                y="metric",
+                palette="viridis"
+                if len(metric_global_data["hidden_size"].unique()) > 1
+                else None,
+                hue="hidden_size"
+                if len(metric_global_data["hidden_size"].unique()) > 1
+                else None,
+                color=colors[m]
+                if len(metric_global_data["hidden_size"].unique()) == 1
+                else None,
+                ax=ax,
+            )
+            if x == "sparsity_":
+                ax.set_xscale("log")
+            # plt.yscale("log")
+            ax.set_xlabel(x_label)
+            ax.set_ylabel("Model Specialization")
+            if x == "sparsity_":
+                ax.set_title(metric)
+            # if (len(metric_global_data["hidden_size"].unique()) == 1) or (
+            #     # m * len(metrics) + j != 2 * len(metrics) - 1
+            # ):
+            if len(metric_global_data["hidden_size"].unique()) > 1:
+                ax.legend().remove()
+
+            cm = plt.cm.get_cmap("viridis")
+            sm = plt.cm.ScalarMappable(
+                cmap=cm,
+                norm=norm,
+            )
+            if (
+                m == len(metrics) - 1
+                and len(metric_global_data["hidden_size"].unique()) > 1
+            ):
+                cbar = fig.colorbar(sm, ax=ax, label="Hidden Size (n)")
+                cbar.set_ticks(metric_global_data["hidden_size"].unique())
+                cbar.set_ticklabels(metric_global_data["hidden_size"].unique())
+
+    return metric_global_data
 
 
 def plot_random_timings(experiment):
@@ -188,7 +283,6 @@ def plot_random_timings(experiment):
     for vp, results in zip(
         experiment.all_varying_params, experiment.results["random_timing"]
     ):
-        test = 0
         u_masks, accs, start_times = (
             results["all_u_masks"],
             results["all_accs"],
@@ -197,12 +291,11 @@ def plot_random_timings(experiment):
         nb_steps = experiment.default_config["data"]["nb_steps"]
         n_modules = experiment.default_config["modules"]["n_modules"]
         for mask, pair in zip(u_masks, start_times.unique(dim=0)):
-            for step, accs_step in enumerate(accs[test]):
+            for step, accs_step in enumerate(accs[0]):
                 for ag, accs_ag in enumerate(accs_step):
                     # plot_data['global_metric'].append(diff_metric(all_accs[step, -1, :, mask].mean(0)))
-                    plot_data["local_metric"].append(
-                        diff_metric(accs_ag[:, mask].mean(1))
-                    )
+                    mean_accs = accs_ag[:, mask].mean(1)
+                    plot_data["local_metric"].append(diff_metric(mean_accs))
                     # plot_data['local_metric_1'].append(diff_metric(all_accs[step, 1, :, mask].mean(0)))
                     plot_data["t0"].append(pair[0].item())
                     plot_data["t1"].append(pair[1].item())
@@ -212,15 +305,6 @@ def plot_random_timings(experiment):
                     for k, v in vp.items():
                         plot_data.setdefault(k, [])
                         plot_data[k].append(v)
-                    # plot_data['x'].append([-1, 1][ag] * (accs.shape[0] - step))
-                    # plot_data['x'].append(step)
-
-            # plot_data['local_metric'].append(diff_metric(accs[step, -1, :, mask].mean(0)))
-            # plot_data['t0'].append(pair[0].item())
-            # plot_data['t1'].append(pair[1].item())
-            # plot_data['t0_t1'].append(tuple(pair.cpu().data.numpy()))
-            # plot_data['step'].append(nb_steps)
-            # plot_data['ag'].append(-1)
 
     plot_data = pd.DataFrame.from_dict(plot_data)
     last_ts_data = [
@@ -233,6 +317,8 @@ def plot_random_timings(experiment):
 
     last_ts_data = pd.concat(last_ts_data)
     plot_data = filter_data(pd.concat([plot_data, last_ts_data]), {"!ag": 2})[0]
+    # plot_data = plot_data.loc[~plot_data["local_metric"].isna()]
+
     fig, axs = plt.subplots(
         3,
         3,
@@ -260,8 +346,7 @@ def plot_random_timings(experiment):
             palette="viridis",
             hue_norm=LogNorm(),
         )
-        # ax.vlines(x = [t0 - 0.5 ], ymin = -1, ymax = 1, color = 'blue', alpha = .2)
-        # ax.vlines(x = [t1 - 0.5 ], ymin = -1, ymax = 1, color = 'red', alpha = .2)
+
         c1 = ax.fill_betweenx([0.1, 1], 0, nb_steps, alpha=0.5, label="M0")
         c2 = ax.fill_betweenx([-0.1, -1], 0, nb_steps, alpha=0.5, label="M1")
 
@@ -322,3 +407,4 @@ def plot_random_timings(experiment):
             tick.label2.set_visible(False)
 
     plt.show()
+    return plot_data

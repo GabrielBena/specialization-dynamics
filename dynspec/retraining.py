@@ -2,20 +2,17 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from dynspec.training import train_community, is_notebook, get_acc
+from dynspec.training import train_community, test_community, is_notebook, get_acc
 from dynspec.models import Readout, init_model
-from dynspec.datasets import get_datasets
 from dynspec.data_process import process_data
 from tqdm.notebook import tqdm as tqdm_n
 from tqdm.notebook import tqdm
+import copy
 
-metric_norm = lambda m: np.clip(m - 0.1 / (1 - 0.1), 0, 1)
+metric_norm_acc = lambda m: np.clip(m - 0.1 / (1 - 0.1), 1e-5, 1)
 diff_metric = lambda metric: (metric[0] - metric[1]) / ((metric[0]) + (metric[1]))
 global_diff_metric = (
-    lambda metric: np.abs(
-        diff_metric(metric_norm(metric[0])) - diff_metric(metric_norm(metric[1]))
-    )
-    / 2
+    lambda metric: np.abs(diff_metric(metric[0]) - diff_metric(metric[1])) / 2
 )
 
 
@@ -154,8 +151,29 @@ def compute_retraining_metric(
     return retraining_results, model, retraining_config
 
 
-def compute_ablations_metric():
-    return
+def compute_ablations_metric(retrained_model, config, loaders, device):
+    model = copy.deepcopy(retrained_model)
+    model.readout.layers = nn.ModuleList(
+        [
+            nn.ModuleList([copy.deepcopy(r[-1]) for _ in range(3)])
+            for r in model.readout.layers
+        ]
+    )
+    ablations_config = config.copy()
+    ablations_config["decision"] = ["none", "none"]
+    ablations_config["training"]["task"] = [
+        [[str(i) for i in range(2)] for _ in range(3)]
+        for _ in range(config["data"]["nb_steps"])
+    ]
+    for readout in model.readout.layers:
+        for ag_to_mask, masked_r in zip([0, 1, None], readout):
+            if ag_to_mask is None:
+                continue
+            masked_r[0].parametrizations.weight[0].mask[
+                :, ag_to_mask * model.hidden_size : (ag_to_mask + 1) * model.hidden_size
+            ] = 0
+    ablations_results = test_community(model, device, loaders[1], ablations_config)
+    return ablations_results, model, ablations_config
 
 
 def compute_random_timing_metric(model, loaders, config, device):
