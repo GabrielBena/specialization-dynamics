@@ -372,7 +372,7 @@ def get_datasets(root, data_config):
         ]
     )
 
-    # truncate_digits = np.arange(n_classes)
+    truncate_digits = np.arange(n_classes)
 
     kwargs = train_kwargs, test_kwargs
 
@@ -383,6 +383,7 @@ def get_datasets(root, data_config):
                 train=t,
                 download=True,
                 transform=transform_digits,
+                truncate=truncate_digits,
             )
             for t in [True, False]
         ]
@@ -455,9 +456,11 @@ def get_datasets(root, data_config):
     if data_sizes is not None:
         datasets = [
             [
-                torch.utils.data.Subset(d, torch.arange(d_size))
-                if d is not None
-                else None
+                (
+                    torch.utils.data.Subset(d, torch.arange(d_size))
+                    if d is not None
+                    else None
+                )
                 for d, d_size in zip(dsets, data_sizes)
             ]
             for dsets in datasets

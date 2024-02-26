@@ -135,7 +135,7 @@ class Experiment(object):
         self.varying_params = varying_params
         self.all_varying_params = get_all_v_params(varying_params)
         self.default_config = default_config
-        self._models, self.optimizers = [], []
+        self._models, self.optimizers, self.schedulers = [], [], []
         self.hash_type = hash_type
 
         if load_save:
@@ -154,19 +154,21 @@ class Experiment(object):
 
                     config = copy_and_change_config(default_config, v_p)
 
-                    model, optimizer = init_model(config, device)
+                    model, optimizer, scheduler = init_model(config, device)
                     self._models.append(model)
                     self.optimizers.append(optimizer)
+                    self.schedulers.append(scheduler)
             self.results = pd.DataFrame.from_dict(self.results)
 
         else:
             for state_dict, config in zip(
                 self.results["state_dicts"].values, self.all_configs
             ):
-                model, optimizer = init_model(config, device)
+                model, optimizer, scheduler = init_model(config, device)
                 model.load_state_dict(state_dict)
                 self._models.append(model)
                 self.optimizers.append(optimizer)
+                self.schedulers.append(scheduler)
 
     def load_result_df(self):
         if self.hash_type == 0:
@@ -238,8 +240,12 @@ class Experiment(object):
         )
         use_tqdm = kwargs.pop("use_tqdm", True)
 
-        for model, optimizer, config, v_p in zip(
-            exp_bar, self.optimizers, self.all_configs, self.all_varying_params
+        for model, optimizer, scheduler, config, v_p in zip(
+            exp_bar,
+            self.optimizers,
+            self.schedulers,
+            self.all_configs,
+            self.all_varying_params,
         ):
             exp_bar.set_description(f"{v_p} ")
             train_results.append(
@@ -248,6 +254,7 @@ class Experiment(object):
                     optimizer,
                     config,
                     loaders,
+                    scheduler=scheduler,
                     stop_acc=stop_acc,
                     device=device,
                     n_epochs=n_epochs,

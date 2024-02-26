@@ -148,7 +148,7 @@ def train_community(
     optimizer,
     config,
     loaders,
-    schedulers=None,
+    scheduler=None,
     n_epochs=None,
     use_tqdm=True,
     trials=(True, True),
@@ -158,14 +158,14 @@ def train_community(
     pbar=None,
 ):
     """
-    Trains a community of models using the given model, optimizer, and data loaders.
+    Trains a community model given an optimizer and data loaders.
 
     Args:
         model (torch.nn.Module): The model to be trained.
         optimizer (torch.optim.Optimizer): The optimizer to be used for training.
         config (dict): The configuration dictionary containing the training parameters.
         loaders (tuple): A tuple of train and test data loaders.
-        schedulers (list, optional): A list of learning rate schedulers. Defaults to None.
+        scheduler (torch.optim.Scheduler, optional): A learning rate scheduler. Defaults to None.
         n_epochs (int, optional): The number of epochs to train for. Defaults to None.
         use_tqdm (bool, optional): Whether to use tqdm progress bars. Defaults to True.
         trials (tuple, optional): A tuple of booleans indicating whether to train and test. Defaults to (True, True).
@@ -262,17 +262,23 @@ def train_community(
                 # Apply gradients on modules weights
                 optimizer.step()
                 descs[-2] = str(
-                    "Train Epoch: {}/{} [{}/{} ({:.0f}%)] Loss: {:.2f}, Accuracy: {} %".format(
+                    "Train Epoch: {}/{} [{}/{} ({:.0f}%)] Loss: {:.2f}, Acc: {}, Dec: {}%".format(
                         epoch,
                         n_epochs,
                         batch_idx * train_loader.batch_size,
                         len(train_loader.dataset),
                         100.0 * batch_idx / len(train_loader),
-                        torch.round(complete_loss.mean(-1), decimals=3).data
-                        if False
-                        else torch.round(loss, decimals=1).item(),
+                        (
+                            torch.round(complete_loss.mean(-1), decimals=3).data
+                            if False
+                            else torch.round(loss, decimals=1).item()
+                        ),
                         show_acc,
-                        # np.mean(deciding_modules) if len(deciding_modules) else None,
+                        (
+                            np.round(np.mean(deciding_modules), 2)
+                            if len(deciding_modules)
+                            else None
+                        ),
                     )
                 )
 
@@ -301,10 +307,8 @@ def train_community(
             if use_tqdm:
                 pbar.set_description(desc(descs))
 
-        if schedulers is not None:
-            for sch in schedulers:
-                if sch:
-                    sch.step()
+        if scheduler is not None:
+            scheduler.step()
 
         results = {
             "train_losses": np.array(train_losses),

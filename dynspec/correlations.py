@@ -5,6 +5,7 @@ from tqdm.notebook import tqdm as tqdm_n
 from tqdm.notebook import tqdm
 from dynspec.data_process import process_data
 from dynspec.training import is_notebook
+from cka.CKA import CKA
 
 
 def fixed_information_data(
@@ -61,7 +62,11 @@ def fixed_information_data(
     return new_data
 
 
+cka_fn = CKA().linear_CKA
 v_pearsonr = np.vectorize(pearsonr, signature="(n1),(n2)->(),()")
+v_cka = lambda states1, states2: np.stack(
+    [cka_fn(s1, s2) for s1, s2 in zip(states1, states2)], 0
+)
 
 
 def randperm_no_fixed(n):
@@ -83,7 +88,7 @@ def randperm_no_fixed(n):
         return perm
 
 
-def get_correlation(model, data):
+def get_correlation(model, data, corr_func="pearsonr"):
     """
     Compute the self-correlation between of module's hidden states
 
@@ -99,7 +104,12 @@ def get_correlation(model, data):
     agent_states = states.split(model.hidden_size, -1)
     agent_states = [ag_s.cpu().data.numpy() for ag_s in agent_states]
     perm = randperm_no_fixed(agent_states[0].shape[1])
-    corr = np.stack([v_pearsonr(ag_s, ag_s[:, perm])[0] for ag_s in agent_states], 1)
+    if corr_func == "pearsonr":
+        corr = np.stack(
+            [v_pearsonr(ag_s, ag_s[:, perm])[0] for ag_s in agent_states], 1
+        )
+    elif corr_func == "cka":
+        corr = np.stack([v_cka(ag_s, ag_s[:, perm]) for ag_s in agent_states], 1)
     return corr
 
 

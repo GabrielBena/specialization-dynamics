@@ -2,10 +2,15 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from dynspec.retraining import global_diff_metric, diff_metric, metric_norm_acc
 import pandas as pd
 from matplotlib.colors import LogNorm, Normalize
 import warnings
+
+from dynspec.retraining import global_diff_metric, diff_metric, metric_norm_acc
+from dynspec.data_process import process_data
+from dynspec.tasks import get_task_target
+from dynspec.decision import get_decision
+from dynspec.training import get_acc
 
 
 def set_style():
@@ -283,15 +288,21 @@ def plot_metric_results(experiment):
                 )[0],
                 x=x,
                 y="metric",
-                palette="viridis"
-                if len(metric_global_data["hidden_size"].unique()) > 1
-                else None,
-                hue="hidden_size"
-                if len(metric_global_data["hidden_size"].unique()) > 1
-                else None,
-                color=colors[m]
-                if len(metric_global_data["hidden_size"].unique()) == 1
-                else None,
+                palette=(
+                    "viridis"
+                    if len(metric_global_data["hidden_size"].unique()) > 1
+                    else None
+                ),
+                hue=(
+                    "hidden_size"
+                    if len(metric_global_data["hidden_size"].unique()) > 1
+                    else None
+                ),
+                color=(
+                    colors[m]
+                    if len(metric_global_data["hidden_size"].unique()) == 1
+                    else None
+                ),
                 ax=ax,
             )
             if x == "sparsity_":
@@ -471,3 +482,75 @@ def plot_random_timings(experiment):
 
     plt.show()
     return plot_data
+
+
+def plot_model_pair_behavior(experiment, loaders, annot=True):
+
+    result_dict = {}
+    for vp, model, config in zip(
+        experiment.all_varying_params, experiment.models, experiment.all_configs
+    ):
+        n_classes = config["data"]["n_classes_per_digit"]
+
+        result_dict[str(vp)] = {}
+
+        for key in ["acc", "decision", "target", "task_target"] + list(
+            experiment.varying_params.keys()
+        ):
+            result_dict[str(vp)][key] = []
+
+        device = list(model.parameters())[0].device
+
+        for data, target in loaders[1]:
+            data, _ = process_data(data, config["data"])
+            data, target = data.to(device), target.to(device)
+            t_target = get_task_target(
+                target,
+                config["training"]["task"],
+                n_classes=n_classes,
+            )
+            out = model(data)[0]
+            out, deciding_ag = get_decision(out, *config["decision"])
+            acc, all_accs = get_acc(out, t_target, config["decision"][1] == "both")
+
+            result_dict[str(vp)]["decision"].extend(
+                deciding_ag.cpu().data.numpy().tolist()
+            )
+            result_dict[str(vp)]["acc"].extend(all_accs.tolist())
+            result_dict[str(vp)]["target"].extend(target.cpu().data.numpy().tolist())
+            result_dict[str(vp)]["task_target"].extend(
+                t_target.cpu().data.numpy().tolist()
+            )
+            for k, v in vp.items():
+                result_dict[str(vp)][k].append(v)
+
+    result_dict = {
+        vp: {k: np.array(v) for k, v in r.items()} for vp, r in result_dict.items()
+    }
+
+    fig = plt.figure(
+        figsize=(3 * n_classes, n_classes * len(result_dict)), constrained_layout=True
+    )
+    subfigs = fig.subfigures(len(result_dict), 1)
+    if len(result_dict) == 1:
+        subfigs = np.array([subfigs])
+    for (vp, res), subfig in zip(result_dict.items(), subfigs):
+
+        axs = subfig.subplots(1, 3)
+        subfig.suptitle(str(vp))
+
+        plot_dict = {
+            k: np.full((n_classes, n_classes), None, dtype=object)
+            for k in ["acc", "decision", "task_target"]
+        }
+
+        for pair in np.unique(res["target"], axis=0):
+            mask = np.all(res["target"] == pair, axis=1)
+            for k in plot_dict.keys():
+                plot_dict[k][pair[0], pair[1]] = res[k][mask].mean()
+
+        for ax, k in zip(axs, plot_dict.keys()):
+            sns.heatmap(
+                np.round(plot_dict[k].astype(float), 2), annot=annot, ax=ax, cbar=False
+            )
+            ax.set_title(k)
